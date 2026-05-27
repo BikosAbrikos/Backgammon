@@ -29,8 +29,17 @@ def _select_die(remaining: list[int], from_pos, to_pos, player: Player) -> int:
         if larger:
             return larger[0]
         return remaining[0]
+    elif from_pos == "bar":
+        # Bar re-entry die: WHITE enters at 24-die, BLACK enters at die-1
+        if player == Player.WHITE:
+            die = 24 - int(to_pos)
+        else:
+            die = int(to_pos) + 1
+        if die in remaining:
+            return die
+        return remaining[0]
     else:
-        needed = abs(int(to_pos) - (int(from_pos) if from_pos != "bar" else 0))
+        needed = abs(int(to_pos) - int(from_pos))
         for d in remaining:
             if d == needed:
                 return d

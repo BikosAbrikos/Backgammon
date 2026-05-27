@@ -7,8 +7,33 @@ import TopBar from '../components/TopBar'
 
 const API_BASE = import.meta.env.VITE_API_URL ?? ''
 
-function WakeUpScreen({ elapsed }: { elapsed: number }) {
+function WakeUpScreen({ elapsed, timedOut, onRetry }: { elapsed: number; timedOut: boolean; onRetry: () => void }) {
   const dots = '.'.repeat((Math.floor(elapsed / 0.6) % 4))
+
+  if (timedOut) {
+    return (
+      <div
+        className="fixed inset-0 flex items-center justify-center"
+        style={{ background: '#0e0804' }}
+      >
+        <div className="flex flex-col items-center gap-6 text-center px-6">
+          <div className="text-5xl">⚠️</div>
+          <div>
+            <h1 className="text-2xl font-bold text-red-400 mb-2">Server unavailable</h1>
+            <p className="text-stone-500 text-sm">The backend took too long to respond.</p>
+          </div>
+          <button
+            onClick={onRetry}
+            className="px-6 py-2 rounded-xl font-bold text-stone-900
+              bg-gradient-to-b from-amber-300 to-amber-500 border border-amber-600
+              hover:from-amber-200 hover:to-amber-400 transition-all"
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div
@@ -34,7 +59,7 @@ function WakeUpScreen({ elapsed }: { elapsed: number }) {
         <div className="w-64 h-1.5 bg-stone-800 rounded-full overflow-hidden">
           <div
             className="h-full bg-amber-500 rounded-full transition-all duration-1000"
-            style={{ width: `${Math.min((elapsed / 45) * 100, 95)}%` }}
+            style={{ width: `${Math.min((elapsed / 60) * 100, 95)}%` }}
           />
         </div>
 
@@ -123,19 +148,41 @@ function WinnerOverlay({ winner, onRestart }: { winner: 'white' | 'black'; onRes
   )
 }
 
+const WAKE_TIMEOUT = 90
+
 export default function GamePage() {
   const { gameState, selectedPoint, isRolling, startGame, rollDice, selectPoint, moveTo } = useGameStore()
   const [serverReady, setServerReady] = useState(false)
   const [showModeSelector, setShowModeSelector] = useState(false)
   const [elapsed, setElapsed] = useState(0)
+  const [timedOut, setTimedOut] = useState(false)
+  const [pingKey, setPingKey] = useState(0)
   const startTime = useRef(Date.now())
 
   // Wake up the server on mount, poll until it responds
   useEffect(() => {
+    // If no API base is configured, skip wake-up (local dev or misconfigured)
+    if (!API_BASE) {
+      setServerReady(true)
+      setShowModeSelector(true)
+      return
+    }
+
     let cancelled = false
+    setTimedOut(false)
+    startTime.current = Date.now()
+    setElapsed(0)
 
     const timer = setInterval(() => {
-      if (!cancelled) setElapsed((Date.now() - startTime.current) / 1000)
+      if (!cancelled) {
+        const secs = (Date.now() - startTime.current) / 1000
+        setElapsed(secs)
+        if (secs >= WAKE_TIMEOUT) {
+          setTimedOut(true)
+          cancelled = true
+          clearInterval(timer)
+        }
+      }
     }, 500)
 
     async function ping() {
@@ -160,7 +207,7 @@ export default function GamePage() {
       cancelled = true
       clearInterval(timer)
     }
-  }, [])
+  }, [pingKey])
 
   async function handleSelectMode(mode: GameMode) {
     await startGame(mode)
@@ -176,7 +223,13 @@ export default function GamePage() {
   }
 
   if (!serverReady) {
-    return <WakeUpScreen elapsed={elapsed} />
+    return (
+      <WakeUpScreen
+        elapsed={elapsed}
+        timedOut={timedOut}
+        onRetry={() => setPingKey(k => k + 1)}
+      />
+    )
   }
 
   if (showModeSelector || !gameState) {

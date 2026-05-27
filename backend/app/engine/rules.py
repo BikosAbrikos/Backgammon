@@ -87,17 +87,29 @@ def get_valid_moves(state: GameState) -> list[MoveOption]:
         # Bar re-entry takes priority
         if state.bar[player.value] > 0:
             if player == Player.WHITE:
-                dest = die - 1  # enters BLACK's home board (indices 0-5)
+                dest = 24 - die  # WHITE enters BLACK's home board (indices 18-23)
             else:
-                dest = 24 - die  # enters WHITE's home board (indices 18-23)
+                dest = die - 1  # BLACK enters WHITE's home board (indices 0-5)
             if 0 <= dest <= 23 and not _point_is_blocked(state.board[dest], player, mode):
                 add(MoveOption(from_pos="bar", to_pos=dest, die_value=die))
             continue
 
         # Bearing off
         if _can_bear_off(state, player):
-            for m in _bear_off_moves(state, player, die):
+            bear_offs = _bear_off_moves(state, player, die)
+            for m in bear_offs:
                 add(m)
+            # If this die can't bear off, allow moving within home board
+            if not bear_offs:
+                direction = _direction(player)
+                home = range(0, 6) if player == Player.WHITE else range(18, 24)
+                for idx in home:
+                    point = state.board[idx]
+                    if point.player != player or point.count == 0:
+                        continue
+                    dest = idx + direction * die
+                    if dest in home and not _point_is_blocked(state.board[dest], player, mode):
+                        add(MoveOption(from_pos=idx, to_pos=dest, die_value=die))
             continue
 
         # Normal moves
