@@ -32,11 +32,13 @@ function BarZone({
   return (
     <div className="flex flex-col justify-center items-center gap-2 w-12 bg-amber-800 rounded">
       {/* Black's bar checkers (top) */}
-      <div className="flex flex-col items-center gap-0.5">
+      <div
+        className={['flex flex-col items-center gap-0.5', current_player === 'black' && blackBar > 0 ? 'cursor-pointer' : ''].join(' ')}
+        onClick={current_player === 'black' && blackBar > 0 ? onSelectBar : undefined}
+      >
         {Array.from({ length: blackBar }).map((_, i) => (
-          <Checker key={i} player="black" count={1} size="sm"
-            onClick={current_player === 'black' ? onSelectBar : undefined}
-            isSelected={selectedPoint === 'bar' && current_player === 'black'}
+          <Checker key={i} player="black" size="sm"
+            isSelected={i === blackBar - 1 && selectedPoint === 'bar' && current_player === 'black'}
           />
         ))}
       </div>
@@ -44,11 +46,13 @@ function BarZone({
       <div className="h-4" />
 
       {/* White's bar checkers (bottom) */}
-      <div className="flex flex-col-reverse items-center gap-0.5">
+      <div
+        className={['flex flex-col-reverse items-center gap-0.5', current_player === 'white' && whiteBar > 0 ? 'cursor-pointer' : ''].join(' ')}
+        onClick={current_player === 'white' && whiteBar > 0 ? onSelectBar : undefined}
+      >
         {Array.from({ length: whiteBar }).map((_, i) => (
-          <Checker key={i} player="white" count={1} size="sm"
-            onClick={current_player === 'white' ? onSelectBar : undefined}
-            isSelected={selectedPoint === 'bar' && current_player === 'white'}
+          <Checker key={i} player="white" size="sm"
+            isSelected={i === whiteBar - 1 && selectedPoint === 'bar' && current_player === 'white'}
           />
         ))}
       </div>

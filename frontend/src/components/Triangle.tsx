@@ -14,6 +14,8 @@ interface TriangleProps {
 }
 
 const TRIANGLE_COLORS = ['bg-red-700', 'bg-stone-200']
+const MAX_STACK = 6
+const STEP = 22
 
 export default function Triangle({
   index,
@@ -28,14 +30,12 @@ export default function Triangle({
 }: TriangleProps) {
   const colorIndex = index % 2
   const baseColor = TRIANGLE_COLORS[colorIndex]
-  const highlightColor = 'bg-green-500'
 
   const clipUp = 'polygon(0% 0%, 50% 100%, 100% 0%)'
   const clipDown = 'polygon(0% 100%, 50% 0%, 100% 100%)'
   const clip = orientation === 'up' ? clipUp : clipDown
 
   const isOwnChecker = pointState.player === currentPlayer && pointState.count > 0
-  const isClickable = isHighlighted || isOwnChecker || isSelected
 
   function handleClick() {
     if (isHighlighted && selectedPoint !== null) {
@@ -45,60 +45,73 @@ export default function Triangle({
     }
   }
 
-  const checkers = pointState.count > 0 && pointState.player ? (
-    <Checker
-      player={pointState.player}
-      count={pointState.count}
-      isSelected={isSelected}
-      onClick={isOwnChecker ? onSelect : undefined}
-    />
-  ) : null
-
-  const checkerContainer =
-    orientation === 'up'
-      ? 'absolute bottom-0 left-0 right-0 flex flex-col items-center gap-0.5 pb-1'
-      : 'absolute top-0 left-0 right-0 flex flex-col-reverse items-center gap-0.5 pt-1'
+  const visible = Math.min(pointState.count, MAX_STACK)
+  const showBadge = pointState.count > MAX_STACK
 
   return (
     <div
       className={[
-        'relative w-full h-full cursor-pointer',
-        isClickable ? 'cursor-pointer' : 'cursor-default',
+        'relative w-full h-full',
+        isHighlighted || isOwnChecker ? 'cursor-pointer' : 'cursor-default',
       ].join(' ')}
       onClick={handleClick}
     >
-      {/* Triangle shape */}
+      {/* Triangle fill */}
       <div
         className={[
           'absolute inset-0 transition-colors duration-150',
-          isHighlighted ? highlightColor : baseColor,
-          isHighlighted ? 'opacity-80' : 'opacity-90',
+          isHighlighted ? 'bg-green-500 opacity-80' : `${baseColor} opacity-90`,
         ].join(' ')}
         style={{ clipPath: clip }}
       />
 
-      {/* Highlight pulse overlay */}
+      {/* Highlight pulse */}
       {isHighlighted && (
         <div
-          className="absolute inset-0 highlight-pulse opacity-30 rounded"
+          className="absolute inset-0 highlight-pulse opacity-30"
           style={{ clipPath: clip, backgroundColor: '#4ade80' }}
         />
       )}
 
-      {/* Point number label */}
+      {/* Point label */}
       <div
         className={[
-          'absolute text-xs font-mono text-stone-500 opacity-50',
-          orientation === 'up' ? 'top-1 left-1/2 -translate-x-1/2' : 'bottom-1 left-1/2 -translate-x-1/2',
+          'absolute text-[10px] font-mono text-stone-500 opacity-40',
+          orientation === 'up'
+            ? 'top-1 left-1/2 -translate-x-1/2'
+            : 'bottom-1 left-1/2 -translate-x-1/2',
         ].join(' ')}
       >
         {index}
       </div>
 
-      {/* Checkers */}
-      <div className={checkerContainer}>
-        {checkers}
-      </div>
+      {/* Stacked checkers */}
+      {pointState.count > 0 && pointState.player && (
+        <>
+          {Array.from({ length: visible }).map((_, i) => {
+            const isTopmost = i === visible - 1
+            const offset = i * STEP
+            const posStyle: React.CSSProperties =
+              orientation === 'up'
+                ? { bottom: `${6 + offset}px`, zIndex: i }
+                : { top: `${6 + offset}px`, zIndex: i }
+
+            return (
+              <div
+                key={i}
+                className="absolute left-1/2 -translate-x-1/2"
+                style={posStyle}
+              >
+                <Checker
+                  player={pointState.player!}
+                  isSelected={isTopmost && isSelected}
+                  badge={isTopmost && showBadge ? pointState.count : undefined}
+                />
+              </div>
+            )
+          })}
+        </>
+      )}
     </div>
   )
 }

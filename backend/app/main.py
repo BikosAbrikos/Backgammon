@@ -9,6 +9,11 @@ from .engine.rules import get_valid_moves
 
 app = FastAPI(title="Backgammon API")
 
+
+@app.get("/health")
+def health():
+    return {"status": "ok"}
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
