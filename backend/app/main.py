@@ -26,7 +26,7 @@ app = FastAPI(title="Backgammon Pro API", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],          # tightened once FRONTEND_URL env var is set on Render
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

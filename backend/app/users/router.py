@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, or_
+import uuid
 from ..database import get_db
 from ..models import User, Game
 from ..schemas import UserPublic, GameRecord
@@ -42,4 +43,31 @@ async def get_history(
         .offset(offset)
         .limit(20)
     )
-    return [GameRecord.model_validate(g) for g in result.scalars()]
+    games = result.scalars().all()
+
+    enriched = []
+    for g in games:
+        is_white = g.white_id == user.id
+        opponent_id = g.black_id if is_white else g.white_id
+        elo_change = g.elo_change_white if is_white else g.elo_change_black
+        result_str = "win" if g.winner_id == user.id else "loss"
+
+        opponent_username = None
+        if opponent_id:
+            opp_result = await db.execute(select(User).where(User.id == opponent_id))
+            opp = opp_result.scalar_one_or_none()
+            if opp:
+                opponent_username = opp.username
+
+        enriched.append(GameRecord(
+            id=g.id,
+            mode=g.mode,
+            type=g.type,
+            opponent_username=opponent_username,
+            bot_level=g.bot_level,
+            result=result_str,
+            elo_change=elo_change,
+            created_at=g.created_at,
+        ))
+
+    return enriched

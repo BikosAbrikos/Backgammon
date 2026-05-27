@@ -15,6 +15,7 @@ async def _enrich(f: Friend, db: AsyncSession, viewer_id: uuid.UUID) -> FriendRe
     result = await db.execute(select(User).where(User.id == other_id))
     other = result.scalar_one_or_none()
     rec = FriendRecord.model_validate(f)
+    rec.direction = "sent" if f.requester_id == viewer_id else "received"
     if other:
         rec.username = other.username
         rec.elo = other.elo

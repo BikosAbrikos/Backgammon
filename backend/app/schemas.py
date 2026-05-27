@@ -59,15 +59,13 @@ class GameRecord(BaseModel):
     id: uuid.UUID
     mode: str
     type: str
-    white_id: Optional[uuid.UUID]
-    black_id: Optional[uuid.UUID]
-    winner_id: Optional[uuid.UUID]
-    elo_change_white: int
-    elo_change_black: int
-    duration_secs: Optional[int]
+    opponent_username: Optional[str] = None
+    bot_level: Optional[str] = None
+    result: str          # 'win' | 'loss'
+    elo_change: int      # signed: positive = gained, negative = lost
     created_at: datetime
 
-    model_config = {"from_attributes": True}
+    model_config = {"from_attributes": False}
 
 
 # ── Friends ───────────────────────────────────────────────────────────────────
@@ -77,6 +75,7 @@ class FriendRecord(BaseModel):
     requester_id: uuid.UUID
     requestee_id: uuid.UUID
     status: str
+    direction: str = "sent"   # 'sent' | 'received' — overwritten by router
     created_at: datetime
     # Enriched fields added by router
     username: Optional[str] = None

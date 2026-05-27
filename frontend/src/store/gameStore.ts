@@ -207,7 +207,6 @@ export const useGameStore = create<GameStore>((set, get) => ({
   setBotThinking: (v) => set({ isBotThinking: v }),
   applyBotState: (state) => set({ gameState: state }),
   addChat: (msg) => set(s => ({ chatMessages: [...s.chatMessages.slice(-99), msg] })),
-  setEloChange: (change) => set({ eloChange: change }),
 
   reset: () => set({
     gameState: null, selectedPoint: null, isRolling: false,

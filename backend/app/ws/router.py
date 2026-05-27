@@ -183,7 +183,6 @@ async def game_ws(websocket: WebSocket, room_id: str):
                     "type": "game_state",
                     "state": state.model_dump(),
                     "players": room.players_info(),
-                    "your_color": color,
                 })
 
             elif msg == "make_move":
@@ -226,7 +225,6 @@ async def game_ws(websocket: WebSocket, room_id: str):
                         "type": "game_state",
                         "state": state.model_dump(),
                         "players": room.players_info(),
-                        "your_color": color,
                     })
 
             elif msg == "resign":
