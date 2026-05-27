@@ -3,5 +3,6 @@ uvicorn[standard]
 pydantic>=2.0
 sqlalchemy[asyncio]
 asyncpg
+aiosqlite
 python-jose[cryptography]
 passlib[bcrypt]

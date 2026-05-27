@@ -169,7 +169,6 @@ function PrivateModal({ onClose }: { onClose: () => void }) {
   const [mode, setMode] = useState<GameMode>('short')
   const [tab, setTab] = useState<'create' | 'join'>('create')
   const [code, setCode] = useState('')
-  const [created, setCreated] = useState<{ code: string; link: string } | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const { token } = useAuthStore()
@@ -181,8 +180,6 @@ function PrivateModal({ onClose }: { onClose: () => void }) {
     try {
       const { data } = await axios.post(`${API_BASE}/rooms/create`, { mode },
         { headers: { Authorization: `Bearer ${token}` } })
-      const link = `${window.location.origin}/join/${data.code}`
-      setCreated({ code: data.code, link })
       setOnlineGame(
         { mode, board: [], bar: { white: 0, black: 0 }, off: { white: 0, black: 0 },
           current_player: 'white', dice: { values: [], remaining: [] },

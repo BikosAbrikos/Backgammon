@@ -86,7 +86,6 @@ export default function ProfilePage() {
   const winRate = profile.games_played > 0
     ? Math.round((profile.games_won / profile.games_played) * 100)
     : 0
-  const losses = profile.games_played - profile.games_won
   const isMe = me?.username === profile.username
 
   return (

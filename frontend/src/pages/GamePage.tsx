@@ -5,7 +5,6 @@ import { useAuthStore } from '../store/authStore'
 import Board from '../components/Board'
 import Dice from '../components/Dice'
 import TopBar from '../components/TopBar'
-import type { GameState } from '../store/gameStore'
 import { botChooseMove, delay } from '../engine/bot'
 import { rollDice as localRollDice } from '../engine/dice'
 import { getValidMoves } from '../engine/rules'
@@ -224,7 +223,6 @@ export default function GamePage() {
 
   const sendChat = useCallback((text: string) => {
     wsRef.current?.send(JSON.stringify({ type: 'chat', text }))
-    const me = onlineCtx?.myColor === 'white' ? 'white' : 'black'
     addChat({ from: 'you', text, ts: Date.now() })
   }, [onlineCtx])
 
