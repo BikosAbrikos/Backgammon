@@ -1,291 +1,332 @@
-import { useState, useEffect, useRef } from 'react'
-import type { GameMode } from '../store/gameStore'
+import { useState, useEffect, useRef, useCallback } from 'react'
+import { useNavigate, useParams } from 'react-router-dom'
 import { useGameStore } from '../store/gameStore'
+import { useAuthStore } from '../store/authStore'
 import Board from '../components/Board'
 import Dice from '../components/Dice'
 import TopBar from '../components/TopBar'
+import type { GameState } from '../store/gameStore'
+import { botChooseMove, delay } from '../engine/bot'
+import { rollDice as localRollDice } from '../engine/dice'
+import { getValidMoves } from '../engine/rules'
+import { applyMove, advanceTurn } from '../engine/moves'
 
-const API_BASE = import.meta.env.VITE_API_URL ?? ''
+const WS_BASE = (import.meta.env.VITE_WS_URL ?? (import.meta.env.VITE_API_URL ?? '').replace('https://', 'wss://').replace('http://', 'ws://'))
 
-function WakeUpScreen({ elapsed, timedOut, onRetry }: { elapsed: number; timedOut: boolean; onRetry: () => void }) {
-  const dots = '.'.repeat((Math.floor(elapsed / 0.6) % 4))
+// ── Winner overlay ────────────────────────────────────────────────────────────
 
-  if (timedOut) {
-    return (
-      <div
-        className="fixed inset-0 flex items-center justify-center"
-        style={{ background: '#0e0804' }}
-      >
-        <div className="flex flex-col items-center gap-6 text-center px-6">
-          <div className="text-5xl">⚠️</div>
-          <div>
-            <h1 className="text-2xl font-bold text-red-400 mb-2">Server unavailable</h1>
-            <p className="text-stone-500 text-sm">The backend took too long to respond.</p>
-          </div>
-          <button
-            onClick={onRetry}
-            className="px-6 py-2 rounded-xl font-bold text-stone-900
-              bg-gradient-to-b from-amber-300 to-amber-500 border border-amber-600
-              hover:from-amber-200 hover:to-amber-400 transition-all"
-          >
-            Retry
-          </button>
-        </div>
-      </div>
-    )
-  }
-
+function WinnerOverlay({ winner, eloChange, myColor, onRestart }: {
+  winner: 'white' | 'black'; eloChange: { white: number; black: number } | null
+  myColor?: 'white' | 'black' | null; onRestart: () => void
+}) {
+  const isMe = myColor && myColor === winner
+  const delta = myColor && eloChange ? eloChange[myColor] : null
   return (
-    <div
-      className="fixed inset-0 flex items-center justify-center"
-      style={{ background: '#0e0804' }}
-    >
-      <div className="flex flex-col items-center gap-6 text-center px-6">
-        {/* Dice spinner */}
-        <div className="text-6xl" style={{ animation: 'diceRoll 1.2s ease-in-out infinite' }}>
-          🎲
-        </div>
-
+    <div className="fixed inset-0 flex items-center justify-center z-50 bg-black/75">
+      <div className="flex flex-col items-center gap-5 p-10 rounded-2xl border border-amber-600/50 text-center"
+        style={{ background: 'linear-gradient(135deg,#1c0f04,#2a1508)' }}>
+        <div className="text-6xl">{winner === 'white' ? '⬜' : '⬛'}</div>
         <div>
-          <h1 className="text-2xl font-bold text-amber-200 mb-2">
-            Waking up the server{dots}
-          </h1>
-          <p className="text-stone-500 text-sm">
-            First visit takes ~30 seconds — hang tight
-          </p>
-        </div>
-
-        {/* Progress bar */}
-        <div className="w-64 h-1.5 bg-stone-800 rounded-full overflow-hidden">
-          <div
-            className="h-full bg-amber-500 rounded-full transition-all duration-1000"
-            style={{ width: `${Math.min((elapsed / 60) * 100, 95)}%` }}
-          />
-        </div>
-
-        <p className="text-stone-600 text-xs">{Math.round(elapsed)}s</p>
-      </div>
-    </div>
-  )
-}
-
-function ModeSelector({ onSelect }: { onSelect: (mode: GameMode) => void }) {
-  return (
-    <div
-      className="fixed inset-0 flex items-center justify-center z-50"
-      style={{ background: 'rgba(10, 6, 2, 0.95)' }}
-    >
-      <div
-        className="flex flex-col items-center gap-8 p-10 rounded-2xl border border-amber-800/40"
-        style={{ background: 'linear-gradient(135deg, #1c0f04 0%, #2a1508 100%)' }}
-      >
-        <div>
-          <h1 className="text-4xl font-bold text-amber-200 text-center tracking-wide mb-2">
-            Backgammon
-          </h1>
-          <p className="text-stone-400 text-center text-sm">Choose your game mode</p>
-        </div>
-
-        <div className="flex gap-6">
-          <button
-            onClick={() => onSelect('short')}
-            className="flex flex-col items-center gap-3 p-8 rounded-xl border border-amber-700/50
-              bg-amber-900/20 hover:bg-amber-900/40 hover:border-amber-500
-              transition-all duration-200 w-52"
-          >
-            <div className="text-4xl">🎯</div>
-            <div className="text-amber-200 font-bold text-lg">Short</div>
-            <div className="text-stone-400 text-xs text-center leading-relaxed">
-              Classic backgammon.<br />Hitting, bar, re-entry.
-            </div>
-          </button>
-
-          <button
-            onClick={() => onSelect('long')}
-            className="flex flex-col items-center gap-3 p-8 rounded-xl border border-stone-600/50
-              bg-stone-800/20 hover:bg-stone-700/40 hover:border-stone-400
-              transition-all duration-200 w-52"
-          >
-            <div className="text-4xl">🏛️</div>
-            <div className="text-amber-200 font-bold text-lg">Long</div>
-            <div className="text-stone-400 text-xs text-center leading-relaxed">
-              Narde-style. Stacked start,<br />no hitting.
-            </div>
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function WinnerOverlay({ winner, onRestart }: { winner: 'white' | 'black'; onRestart: () => void }) {
-  const isWhite = winner === 'white'
-  return (
-    <div className="fixed inset-0 flex items-center justify-center z-50"
-      style={{ background: 'rgba(0,0,0,0.80)' }}>
-      <div
-        className="flex flex-col items-center gap-6 p-10 rounded-2xl border border-amber-600/50 text-center"
-        style={{ background: 'linear-gradient(135deg, #1c0f04 0%, #2a1508 100%)' }}
-      >
-        <div className="text-6xl">{isWhite ? '⬜' : '⬛'}</div>
-        <div>
-          <h2 className="text-3xl font-bold text-amber-200 mb-2">
-            {isWhite ? 'White' : 'Black'} Wins!
+          <h2 className="text-3xl font-bold text-amber-200 mb-1">
+            {isMe === true ? 'You Won!' : isMe === false ? 'You Lost' : `${winner === 'white' ? 'White' : 'Black'} Wins!`}
           </h2>
-          <p className="text-stone-400 text-sm">All 15 checkers borne off.</p>
+          {delta !== null && (
+            <p className={['text-lg font-semibold', delta >= 0 ? 'text-green-400' : 'text-red-400'].join(' ')}>
+              {delta >= 0 ? '+' : ''}{delta} Elo
+            </p>
+          )}
         </div>
-        <button
-          onClick={onRestart}
+        <button onClick={onRestart}
           className="px-8 py-3 rounded-xl font-bold text-stone-900 text-lg
             bg-gradient-to-b from-amber-300 to-amber-500 border border-amber-600
-            shadow-[0_4px_12px_rgba(0,0,0,0.4)] hover:from-amber-200 hover:to-amber-400
-            active:scale-95 transition-all"
-        >
-          Play Again
+            hover:from-amber-200 hover:to-amber-400 active:scale-95 transition-all">
+          Back to Lobby
         </button>
       </div>
     </div>
   )
 }
 
-const WAKE_TIMEOUT = 90
+// ── Chat sidebar ──────────────────────────────────────────────────────────────
+
+const QUICK = ['gg', 'nice move!', 'brb', 'good luck']
+
+function ChatPanel({ messages, onSend }: {
+  messages: { from: string; text: string; ts: number }[]
+  onSend: (text: string) => void
+}) {
+  const [input, setInput] = useState('')
+  const bottomRef = useRef<HTMLDivElement>(null)
+  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages])
+
+  function send(text: string) {
+    const t = text.trim()
+    if (t) { onSend(t); setInput('') }
+  }
+
+  return (
+    <div className="flex flex-col w-56 bg-stone-900/60 rounded-xl border border-stone-800/50 overflow-hidden">
+      <div className="px-3 py-2 border-b border-stone-800/50 text-xs text-stone-500 font-semibold uppercase tracking-wider">Chat</div>
+      <div className="flex-1 overflow-y-auto p-2 flex flex-col gap-1 min-h-0" style={{ maxHeight: '300px' }}>
+        {messages.map((m, i) => (
+          <div key={i} className="text-xs">
+            <span className="text-amber-400 font-semibold">{m.from}: </span>
+            <span className="text-stone-300">{m.text}</span>
+          </div>
+        ))}
+        <div ref={bottomRef} />
+      </div>
+      <div className="flex gap-1 p-1 flex-wrap border-t border-stone-800/30">
+        {QUICK.map(q => (
+          <button key={q} onClick={() => send(q)}
+            className="text-[10px] px-2 py-0.5 rounded bg-stone-800 text-stone-400 hover:text-stone-200 hover:bg-stone-700 transition-colors">
+            {q}
+          </button>
+        ))}
+      </div>
+      <form onSubmit={e => { e.preventDefault(); send(input) }} className="flex gap-1 p-2 border-t border-stone-800/30">
+        <input value={input} onChange={e => setInput(e.target.value)}
+          placeholder="Message…" maxLength={200}
+          className="flex-1 min-w-0 px-2 py-1 rounded bg-stone-800/80 border border-stone-700 text-xs text-stone-200 placeholder-stone-600 focus:outline-none focus:border-amber-700" />
+        <button type="submit" className="text-amber-500 hover:text-amber-300 text-sm px-1">↵</button>
+      </form>
+    </div>
+  )
+}
+
+// ── Main GamePage ─────────────────────────────────────────────────────────────
 
 export default function GamePage() {
-  const { gameState, selectedPoint, isRolling, startGame, rollDice, selectPoint, moveTo } = useGameStore()
-  const [serverReady, setServerReady] = useState(false)
-  const [showModeSelector, setShowModeSelector] = useState(false)
-  const [elapsed, setElapsed] = useState(0)
-  const [timedOut, setTimedOut] = useState(false)
-  const [pingKey, setPingKey] = useState(0)
-  const startTime = useRef(Date.now())
+  const { roomId } = useParams<{ roomId?: string }>()
+  const navigate = useNavigate()
+  const { token } = useAuthStore()
+  const {
+    gameState, gameType, selectedPoint, isRolling, isBotThinking,
+    botLevel, botColor, onlineCtx, chatMessages, eloChange,
+    rollDice, selectPoint, moveTo, clearSelection,
+    setBotThinking, applyBotState, setOnlineGame, receiveOnlineState,
+    setEloChange, addChat, reset,
+  } = useGameStore()
 
-  // Wake up the server on mount, poll until it responds
+  const wsRef = useRef<WebSocket | null>(null)
+  const [wsStatus, setWsStatus] = useState<'connecting' | 'connected' | 'disconnected'>('connecting')
+  const [opponentLeft, setOpponentLeft] = useState(false)
+
+  // ── Online WS management ───────────────────────────────────────────────────
+
   useEffect(() => {
-    // If no API base is configured, skip wake-up (local dev or misconfigured)
-    if (!API_BASE) {
-      setServerReady(true)
-      setShowModeSelector(true)
-      return
-    }
+    if (!roomId) return  // local or bot game
+    if (!token) { navigate('/auth'); return }
 
     let cancelled = false
-    setTimedOut(false)
-    startTime.current = Date.now()
-    setElapsed(0)
+    let attempts = 0
 
-    const timer = setInterval(() => {
-      if (!cancelled) {
-        const secs = (Date.now() - startTime.current) / 1000
-        setElapsed(secs)
-        if (secs >= WAKE_TIMEOUT) {
-          setTimedOut(true)
-          cancelled = true
-          clearInterval(timer)
-        }
+    function connect() {
+      if (cancelled) return
+      const ws = new WebSocket(`${WS_BASE}/ws/game/${roomId}`)
+      wsRef.current = ws
+
+      ws.onopen = () => {
+        ws.send(JSON.stringify({ type: 'auth', token }))
+        setWsStatus('connected')
+        setOpponentLeft(false)
       }
-    }, 500)
 
-    async function ping() {
-      while (!cancelled) {
-        try {
-          const res = await fetch(`${API_BASE}/health`, { signal: AbortSignal.timeout(8000) })
-          if (res.ok && !cancelled) {
-            setServerReady(true)
-            setShowModeSelector(true)
-            clearInterval(timer)
-            return
+      ws.onmessage = e => {
+        const msg = JSON.parse(e.data)
+        if (msg.type === 'game_state') {
+          receiveOnlineState(msg.state)
+          if (msg.your_color && onlineCtx?.myColor !== msg.your_color) {
+            setOnlineGame(msg.state, {
+              roomId: roomId!,
+              myColor: msg.your_color,
+              opponent: msg.players?.[msg.your_color === 'white' ? 'black' : 'white'] ?? { username: 'Opponent', elo: 0 },
+            })
           }
-        } catch {
-          // still sleeping
+        } else if (msg.type === 'game_over') {
+          if (msg.state) receiveOnlineState(msg.state)
+          if (msg.elo_change) setEloChange(msg.elo_change)
+        } else if (msg.type === 'chat') {
+          addChat({ from: msg.from, text: msg.text, ts: Date.now() })
+        } else if (msg.type === 'opponent_left') {
+          setOpponentLeft(true)
         }
-        await new Promise(r => setTimeout(r, 3000))
       }
+
+      ws.onclose = () => {
+        setWsStatus('disconnected')
+        if (!cancelled && attempts < 5) {
+          attempts++
+          setTimeout(connect, 3000)
+        }
+      }
+
+      ws.onerror = () => ws.close()
     }
 
-    ping()
-    return () => {
-      cancelled = true
-      clearInterval(timer)
+    connect()
+    return () => { cancelled = true; wsRef.current?.close() }
+  }, [roomId, token])
+
+  // ── Bot automation ────────────────────────────────────────────────────────
+
+  useEffect(() => {
+    if (gameType !== 'bot' || !botColor || !botLevel || !gameState) return
+    if (gameState.phase !== 'waiting_roll' || gameState.current_player !== botColor) return
+
+    let cancelled = false
+    setBotThinking(true)
+
+    async function runBot() {
+      let state = gameState!
+
+      await delay(700 + Math.random() * 400)
+      if (cancelled) return
+
+      // Roll
+      const dice = localRollDice()
+      state = { ...state, dice, phase: 'moving' }
+      state.valid_moves = getValidMoves(state)
+      if (!state.valid_moves.length) {
+        applyBotState(advanceTurn(state))
+        setBotThinking(false)
+        return
+      }
+      applyBotState(state)
+
+      // Play all moves
+      while (!cancelled && state.phase === 'moving' && state.current_player === botColor && state.valid_moves.length) {
+        await delay(600 + Math.random() * 700)
+        if (cancelled) return
+        const move = botChooseMove(state, botLevel!)
+        if (!move) break
+        state = applyMove(state, move.from_pos, move.to_pos)
+        if (!cancelled) applyBotState(state)
+      }
+
+      if (!cancelled) setBotThinking(false)
     }
-  }, [pingKey])
 
-  async function handleSelectMode(mode: GameMode) {
-    await startGame(mode)
-    setShowModeSelector(false)
+    runBot()
+    return () => { cancelled = true }
+  }, [gameState?.current_player, gameState?.phase, gameType, botColor])
+
+  // ── Online roll / move proxies ─────────────────────────────────────────────
+
+  const onlineRoll = useCallback(() => {
+    wsRef.current?.send(JSON.stringify({ type: 'roll_dice' }))
+  }, [])
+
+  const onlineMove = useCallback((to: number | 'off') => {
+    wsRef.current?.send(JSON.stringify({ type: 'make_move', from_pos: selectedPoint, to_pos: to }))
+    clearSelection()
+  }, [selectedPoint])
+
+  const sendChat = useCallback((text: string) => {
+    wsRef.current?.send(JSON.stringify({ type: 'chat', text }))
+    const me = onlineCtx?.myColor === 'white' ? 'white' : 'black'
+    addChat({ from: 'you', text, ts: Date.now() })
+  }, [onlineCtx])
+
+  // ── Guard: redirect if no game ────────────────────────────────────────────
+
+  if (!gameState && !roomId) {
+    navigate('/lobby')
+    return null
   }
 
-  async function handleRestart() {
-    setShowModeSelector(true)
-  }
+  const isOnline = gameType === 'online' || !!roomId
+  const canRoll = gameState?.phase === 'waiting_roll' && (
+    isOnline
+      ? gameState.current_player === onlineCtx?.myColor
+      : true
+  )
+  const isBotTurn = gameType === 'bot' && gameState?.current_player === botColor
+  const hasBar = gameState ? gameState.bar[gameState.current_player] > 0 : false
 
-  async function handleSwitchMode(mode: GameMode) {
-    await startGame(mode)
-  }
+  const effectiveRoll = isOnline ? onlineRoll : rollDice
+  const effectiveMove = isOnline ? onlineMove : moveTo
 
-  if (!serverReady) {
-    return (
-      <WakeUpScreen
-        elapsed={elapsed}
-        timedOut={timedOut}
-        onRetry={() => setPingKey(k => k + 1)}
-      />
-    )
+  function handleRestart() {
+    reset()
+    navigate('/lobby')
   }
-
-  if (showModeSelector || !gameState) {
-    return <ModeSelector onSelect={handleSelectMode} />
-  }
-
-  const canRoll = gameState.phase === 'waiting_roll'
-  const hasBarCheckers = gameState.bar[gameState.current_player] > 0
 
   return (
     <div className="flex flex-col min-h-screen">
       <TopBar
-        gameState={gameState}
+        gameState={gameState!}
         onRestart={handleRestart}
-        onSwitchMode={handleSwitchMode}
+        onSwitchMode={async () => handleRestart()}
       />
 
-      <div className="flex-1 flex flex-col items-center justify-center gap-4 p-6">
-        <div className="text-sm text-stone-400 h-5">
-          {hasBarCheckers && gameState.phase === 'moving' && (
-            <span className="text-red-400 font-semibold">
-              You must re-enter from the bar first!
-            </span>
+      {/* WS connecting banner */}
+      {isOnline && wsStatus === 'connecting' && (
+        <div className="text-center py-2 bg-amber-900/30 text-amber-300 text-sm">
+          Connecting to game server…
+        </div>
+      )}
+      {opponentLeft && (
+        <div className="text-center py-2 bg-red-900/30 text-red-300 text-sm">
+          Opponent disconnected — waiting 30s for reconnect
+        </div>
+      )}
+
+      <div className="flex-1 flex flex-col lg:flex-row items-center justify-center gap-6 p-6">
+        <div className="flex flex-col items-center gap-4 w-full max-w-4xl">
+          {/* Status line */}
+          <div className="text-sm text-stone-400 h-5">
+            {isBotThinking && <span className="text-amber-400">Bot is thinking…</span>}
+            {!isBotThinking && hasBar && gameState?.phase === 'moving' && (
+              <span className="text-red-400 font-semibold">Must re-enter from bar first!</span>
+            )}
+            {!isBotThinking && gameState?.phase === 'waiting_roll' && !isBotTurn && (
+              <span className="text-amber-300">
+                {isOnline && onlineCtx
+                  ? (gameState.current_player === onlineCtx.myColor ? 'Your turn — roll the dice' : `Waiting for ${onlineCtx.opponent.username}…`)
+                  : `${gameState?.current_player === 'white' ? 'White' : 'Black'} — roll to move`}
+              </span>
+            )}
+            {!isBotThinking && gameState?.phase === 'moving' && !hasBar && selectedPoint === null && (
+              <span className="text-stone-400">Select a checker to move</span>
+            )}
+            {selectedPoint !== null && (
+              <span className="text-green-400">Click a highlighted point to move</span>
+            )}
+          </div>
+
+          {gameState && (
+            <Board
+              gameState={gameState}
+              selectedPoint={selectedPoint}
+              onSelectPoint={selectPoint}
+              onMoveToPoint={effectiveMove}
+            />
           )}
-          {gameState.phase === 'waiting_roll' && (
-            <span className="text-amber-300">
-              {gameState.current_player === 'white' ? 'White' : 'Black'} — roll the dice to move
-            </span>
-          )}
-          {gameState.phase === 'moving' && !hasBarCheckers && selectedPoint === null && (
-            <span className="text-stone-400">Select a checker to move</span>
-          )}
-          {selectedPoint !== null && (
-            <span className="text-green-400">Click a highlighted point to move</span>
+
+          {gameState && (
+            <Dice
+              dice={gameState.dice}
+              onRoll={effectiveRoll}
+              canRoll={canRoll && !isBotThinking}
+              isRolling={isRolling}
+            />
           )}
         </div>
 
-        <div className="w-full max-w-4xl">
-          <Board
-            gameState={gameState}
-            selectedPoint={selectedPoint}
-            onSelectPoint={selectPoint}
-            onMoveToPoint={moveTo}
-          />
-        </div>
-
-        <Dice
-          dice={gameState.dice}
-          onRoll={rollDice}
-          canRoll={canRoll}
-          isRolling={isRolling}
-        />
+        {/* Chat (online only) */}
+        {isOnline && (
+          <ChatPanel messages={chatMessages} onSend={sendChat} />
+        )}
       </div>
 
-      {gameState.phase === 'game_over' && gameState.winner && (
-        <WinnerOverlay winner={gameState.winner} onRestart={handleRestart} />
+      {gameState?.phase === 'game_over' && gameState.winner && (
+        <WinnerOverlay
+          winner={gameState.winner}
+          eloChange={eloChange}
+          myColor={onlineCtx?.myColor}
+          onRestart={handleRestart}
+        />
       )}
     </div>
   )

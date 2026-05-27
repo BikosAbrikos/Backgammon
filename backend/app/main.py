@@ -1,73 +1,62 @@
-from fastapi import FastAPI, HTTPException
+import os
+from contextlib import asynccontextmanager
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .engine.state import GameState, NewGameRequest, MoveRequest, Phase
-from .engine.setup import create_initial_state
-from .engine.dice import roll_dice
-from .engine.moves import apply_move, _advance_turn
-from .engine.rules import get_valid_moves
+from .database import create_tables
+from .auth.router import router as auth_router
+from .users.router import router as users_router
+from .friends.router import router as friends_router
+from .rooms.router import router as rooms_router
+from .ws.router import router as ws_router
+from .ws.manager import manager
 
-app = FastAPI(title="Backgammon API")
+FRONTEND_URL = os.getenv("FRONTEND_URL", "*")
+ALLOWED_ORIGINS = [FRONTEND_URL] if FRONTEND_URL != "*" else ["*"]
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    await create_tables()
+    manager.start_matchmaking()
+    yield
+
+
+app = FastAPI(title="Backgammon Pro API", lifespan=lifespan)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],          # tightened once FRONTEND_URL env var is set on Render
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+app.include_router(auth_router)
+app.include_router(users_router)
+app.include_router(friends_router)
+app.include_router(rooms_router)
+app.include_router(ws_router)
 
 
 @app.get("/health")
 def health():
     return {"status": "ok"}
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 
-current_game: GameState | None = None
+# ── Legacy single-player endpoint (still used by local/bot frontend games) ───
+
+from .engine.state import GameState, NewGameRequest
+from .engine.setup import create_initial_state
+from .engine.rules import get_valid_moves
+
+_current_game: GameState | None = None
 
 
 @app.post("/game/new", response_model=GameState)
 def new_game(request: NewGameRequest):
-    global current_game
+    global _current_game
     state = create_initial_state(request.mode)
     state.valid_moves = get_valid_moves(state)
-    current_game = state
-    return current_game
-
-
-@app.post("/game/roll", response_model=GameState)
-def roll():
-    global current_game
-    if current_game is None:
-        raise HTTPException(status_code=404, detail="No active game")
-    if current_game.phase != Phase.WAITING_ROLL:
-        raise HTTPException(status_code=400, detail="Not in roll phase")
-    current_game.dice = roll_dice()
-    current_game.phase = Phase.MOVING
-    current_game.valid_moves = get_valid_moves(current_game)
-    if not current_game.valid_moves:
-        current_game = _advance_turn(current_game)
-    return current_game
-
-
-@app.post("/game/move", response_model=GameState)
-def make_move(request: MoveRequest):
-    global current_game
-    if current_game is None:
-        raise HTTPException(status_code=404, detail="No active game")
-    if current_game.phase != Phase.MOVING:
-        raise HTTPException(status_code=400, detail="Not in moving phase")
-    valid = get_valid_moves(current_game)
-    is_valid = any(
-        str(m.from_pos) == str(request.from_pos) and str(m.to_pos) == str(request.to_pos)
-        for m in valid
-    )
-    if not is_valid:
-        raise HTTPException(status_code=400, detail="Illegal move")
-    current_game = apply_move(current_game, request.from_pos, request.to_pos)
-    return current_game
-
-
-@app.get("/game/state", response_model=GameState)
-def get_state():
-    if current_game is None:
-        raise HTTPException(status_code=404, detail="No active game")
-    return current_game
+    _current_game = state
+    return _current_game
