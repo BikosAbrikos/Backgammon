@@ -1,6 +1,9 @@
 import { create } from 'zustand'
 import axios from 'axios'
 
+const API_BASE = import.meta.env.VITE_API_URL ?? ''
+const api = axios.create({ baseURL: API_BASE })
+
 export type Player = 'white' | 'black'
 export type GameMode = 'long' | 'short'
 export type Phase = 'waiting_roll' | 'moving' | 'game_over'
@@ -50,14 +53,14 @@ export const useGameStore = create<GameStore>((set, get) => ({
   isRolling: false,
 
   startGame: async (mode) => {
-    const { data } = await axios.post<GameState>('/game/new', { mode })
+    const { data } = await api.post<GameState>('/game/new', { mode })
     set({ gameState: data, selectedPoint: null })
   },
 
   rollDice: async () => {
     set({ isRolling: true })
     try {
-      const { data } = await axios.post<GameState>('/game/roll')
+      const { data } = await api.post<GameState>('/game/roll')
       set({ gameState: data, selectedPoint: null })
     } finally {
       setTimeout(() => set({ isRolling: false }), 520)
@@ -106,7 +109,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const { selectedPoint, gameState } = get()
     if (selectedPoint === null || !gameState) return
     set({ selectedPoint: null })
-    const { data } = await axios.post<GameState>('/game/move', {
+    const { data } = await api.post<GameState>('/game/move', {
       from_pos: selectedPoint,
       to_pos: to,
     })
