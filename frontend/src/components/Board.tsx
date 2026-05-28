@@ -217,31 +217,13 @@ export default function Board({ gameState, selectedPoint, onSelectPoint, onMoveT
             </div>
           </div>
 
-          {/* Center divider — bar continues through the middle */}
-          <div className="relative flex items-center h-[8%] bg-stone-900/50">
-            {/* Vertical bar column (matches top/bottom BarZone width) */}
-            <div
-              className="absolute left-1/2 -translate-x-1/2 h-full bg-amber-800"
-              style={{ width: '48px' }}
-            />
-            {/* Left half label */}
-            <div className="flex-1 flex items-center justify-center relative z-10">
-              <div className="h-px flex-1 bg-amber-900/40 mx-3" />
-              <span className="text-amber-700/50 text-[10px] font-mono tracking-widest whitespace-nowrap">
-                {ghostBranches ? '⚛ QUANTUM' : '◆ BACKGAMMON'}
-              </span>
-              <div className="h-px flex-1 bg-amber-900/40 mx-3" />
+          {/* Center divider */}
+          <div className="flex items-center justify-center h-[8%] bg-stone-900/50">
+            <div className="h-px flex-1 bg-amber-900/50" />
+            <div className="px-4 text-amber-700/60 text-xs font-mono tracking-widest">
+              {ghostBranches ? '⚛ QUANTUM ⚛' : '◆ BACKGAMMON ◆'}
             </div>
-            {/* Spacer for bar column */}
-            <div style={{ width: '48px' }} />
-            {/* Right half label */}
-            <div className="flex-1 flex items-center justify-center relative z-10">
-              <div className="h-px flex-1 bg-amber-900/40 mx-3" />
-              <span className="text-amber-700/50 text-[10px] font-mono tracking-widest whitespace-nowrap">
-                {ghostBranches ? '⚛ QUANTUM' : '◆ BACKGAMMON'}
-              </span>
-              <div className="h-px flex-1 bg-amber-900/40 mx-3" />
-            </div>
+            <div className="h-px flex-1 bg-amber-900/50" />
           </div>
 
           {/* Bottom row (points 11-0) */}
