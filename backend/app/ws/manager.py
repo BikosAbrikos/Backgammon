@@ -4,6 +4,7 @@ import json
 import random
 import uuid
 from datetime import datetime, timezone
+from typing import Optional
 from fastapi import WebSocket
 
 
@@ -27,6 +28,23 @@ class GameRoom:
         self.spectators: list[WebSocket] = []
         self.started_at: datetime | None = None
         self.disconnect_task: asyncio.Task | None = None
+
+        # Spy mode state
+        self.spy_tokens: dict = {'white': 3, 'black': 3}
+        self.spy_window_open: bool = False
+        self.spy_last_mover: str | None = None
+        self.spy_last_dest: int | None = None
+        self.spy_was_illegal: bool = False
+        self.spy_close_task: asyncio.Task | None = None
+
+        # Quantum mode state
+        self.quantum_phase: str | None = None          # 'building' | 'opponent'
+        self.quantum_player: str | None = None         # 'white' | 'black'
+        self.quantum_pre_state = None                  # GameState snapshot after dice roll
+        self.quantum_branch_a: dict | None = None      # Branch A final positions
+        self.quantum_branch_b: dict | None = None      # Branch B final positions
+        self.quantum_branch_a_moves: list = []         # Moves made in Branch A
+        self.quantum_branch_b_moves: list = []         # Moves auto-generated for Branch B
 
     def players_info(self) -> dict:
         return {

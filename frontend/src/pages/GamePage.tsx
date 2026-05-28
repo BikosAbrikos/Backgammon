@@ -472,6 +472,7 @@ export default function GamePage() {
     setBotThinking, applyBotState, applyBotSpyMove, setOnlineGame, receiveOnlineState,
     setEloChange, addChat, reset, clearCollapsedBranch,
     challenge, closeChallengeWindow, clearSpyResult,
+    setSpyCtxOnline, setQuantumCtxOnline, setCollapsedBranchOnline, setSpyResultOnline,
   } = useGameStore()
 
   const wsRef = useRef<WebSocket | null>(null)
@@ -501,6 +502,7 @@ export default function GamePage() {
 
       ws.onmessage = e => {
         const msg = JSON.parse(e.data)
+
         if (msg.type === 'game_state') {
           receiveOnlineState(msg.state)
           if (msg.your_color && onlineCtx?.myColor !== msg.your_color) {
@@ -510,11 +512,79 @@ export default function GamePage() {
               opponent: msg.players?.[msg.your_color === 'white' ? 'black' : 'white'] ?? { username: 'Opponent', elo: 0 },
             })
           }
+          // Quantum: server signals the start of the building phase
+          if (msg.quantum_phase === 'building') {
+            setQuantumCtxOnline({
+              phase: 'building',
+              quantumPlayer: msg.quantum_player,
+              preQuantumState: msg.state,
+              branchA: null,
+              branchB: null,
+              branchAMoves: [],
+              branchBMoves: [],
+            })
+          }
+          // Spy: sync token counts from server on regular game_state updates
+          if (msg.state?.mode === 'spy' && msg.spy_tokens) {
+            setSpyCtxOnline({
+              tokensRemaining: msg.spy_tokens,
+              lastMove: null,
+              challengeWindowOpen: false,
+              challengeExpires: null,
+            })
+          }
+
+        } else if (msg.type === 'spy_state') {
+          // A spy move was made — challenge window opens for the opponent
+          receiveOnlineState(msg.state)
+          setSpyCtxOnline({
+            tokensRemaining: msg.spy_tokens,
+            lastMove: { mover: msg.last_mover, dest: -1, wasIllegal: false },
+            challengeWindowOpen: true,
+            challengeExpires: Date.now() + 5000,
+          })
+
+        } else if (msg.type === 'spy_result') {
+          // Challenge was resolved (caught / missed / timeout)
+          receiveOnlineState(msg.state)
+          setSpyCtxOnline({
+            tokensRemaining: msg.spy_tokens,
+            lastMove: null,
+            challengeWindowOpen: false,
+            challengeExpires: null,
+          })
+          if (msg.result === 'caught' || msg.result === 'missed') {
+            setSpyResultOnline(msg.result)
+          }
+
+        } else if (msg.type === 'quantum_branches') {
+          // Branch A done — opponent plays on pre-quantum board; ghost overlays active
+          receiveOnlineState(msg.state)
+          setQuantumCtxOnline({
+            phase: 'opponent',
+            quantumPlayer: msg.quantum_player,
+            preQuantumState: msg.state,
+            branchA: msg.branch_a,
+            branchB: msg.branch_b,
+            branchAMoves: msg.branch_a_moves ?? [],
+            branchBMoves: msg.branch_b_moves ?? [],
+          })
+
+        } else if (msg.type === 'quantum_collapse') {
+          // Random branch selected — show collapse overlay
+          receiveOnlineState(msg.state)
+          setQuantumCtxOnline(null)
+          setCollapsedBranchOnline(msg.branch)
+          setShowCollapse(true)
+
         } else if (msg.type === 'game_over') {
           if (msg.state) receiveOnlineState(msg.state)
           if (msg.elo_change) setEloChange(msg.elo_change)
+
         } else if (msg.type === 'chat') {
-          addChat({ from: msg.from, text: msg.text, ts: Date.now() })
+          // Tag own messages as 'you' (server echoes back to sender too)
+          addChat({ from: msg.from === user?.username ? 'you' : msg.from, text: msg.text, ts: Date.now() })
+
         } else if (msg.type === 'opponent_left') {
           setOpponentLeft(true)
         }
@@ -626,18 +696,21 @@ export default function GamePage() {
 
   // ── Quantum collapse visual feedback ──────────────────────────────────────
 
+  // For local/bot quantum: detect collapse via phase transition
+  // For online quantum: collapse is triggered directly in the WS handler above
   const prevPhaseRef = useRef<QuantumCtx['phase'] | null>(null)
   useEffect(() => {
+    const onl = gameType === 'online' || !!roomId
+    if (onl) return  // online collapse is handled in WS handler
     const prev = prevPhaseRef.current
     const cur = quantumCtx?.phase ?? null
-    // Show collapse overlay when quantum transitions from 'opponent' to null (collapsed)
     if (prev === 'opponent' && cur === null) {
       setShowCollapse(true)
     }
     prevPhaseRef.current = cur
-  }, [quantumCtx?.phase])
+  }, [quantumCtx?.phase, gameType, roomId])
 
-  // ── Online roll / move proxies ─────────────────────────────────────────────
+  // ── Online roll / move / challenge proxies ────────────────────────────────
 
   const onlineRoll = useCallback(() => {
     wsRef.current?.send(JSON.stringify({ type: 'roll_dice' }))
@@ -649,9 +722,26 @@ export default function GamePage() {
   }, [selectedPoint])
 
   const sendChat = useCallback((text: string) => {
+    // Don't add locally — server echoes back to all players including sender
     wsRef.current?.send(JSON.stringify({ type: 'chat', text }))
-    addChat({ from: 'you', text, ts: Date.now() })
-  }, [onlineCtx])
+  }, [])
+
+  // Spy challenge: online sends WS, local/bot uses store action
+  const handleChallenge = useCallback(() => {
+    if (gameType === 'online' || !!roomId) {
+      wsRef.current?.send(JSON.stringify({ type: 'spy_challenge' }))
+    } else {
+      challenge()
+    }
+  }, [gameType, roomId, challenge])
+
+  const handleCloseChallenge = useCallback(() => {
+    if (gameType === 'online' || !!roomId) {
+      wsRef.current?.send(JSON.stringify({ type: 'spy_skip' }))
+    } else {
+      closeChallengeWindow()
+    }
+  }, [gameType, roomId, closeChallengeWindow])
 
   // ── Guard ─────────────────────────────────────────────────────────────────
 
@@ -819,15 +909,15 @@ export default function GamePage() {
       {spyCtx?.challengeWindowOpen && (
         <ChallengeWindow
           spyCtx={spyCtx}
-          currentPlayer={gameState.current_player}
+          currentPlayer={isOnline && onlineCtx ? onlineCtx.myColor : gameState.current_player}
           isBot={gameType === 'bot'}
-          onChallenge={challenge}
-          onClose={closeChallengeWindow}
+          onChallenge={handleChallenge}
+          onClose={handleCloseChallenge}
         />
       )}
 
       {spyResult && (
-        <SpyResultToast result={spyResult} onDone={clearSpyResult} />
+        <SpyResultToast result={spyResult} onDone={() => { clearSpyResult(); setSpyResultOnline(null) }} />
       )}
     </div>
   )

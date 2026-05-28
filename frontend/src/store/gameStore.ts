@@ -201,6 +201,12 @@ interface GameStore {
   applyBotState: (state: GameState) => void
   applyBotSpyMove: (state: GameState, mover: Player, dest: number, wasIllegal: boolean) => void
 
+  // Online direct setters (spy / quantum WS events)
+  setSpyCtxOnline: (ctx: SpyCtx | null) => void
+  setQuantumCtxOnline: (ctx: QuantumCtx | null) => void
+  setCollapsedBranchOnline: (b: 'A' | 'B' | null) => void
+  setSpyResultOnline: (r: 'caught' | 'missed' | null) => void
+
   // Chat
   addChat: (msg: ChatMessage) => void
 
@@ -260,6 +266,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   },
 
   setOnlineGame: (state, ctx) => {
+    const mode = state.mode as string
     set({
       gameState: state,
       gameType: 'online',
@@ -270,7 +277,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
       chatMessages: [],
       eloChange: null,
       quantumCtx: null,
-      spyCtx: null,
+      spyCtx: mode === 'spy'
+        ? { tokensRemaining: { white: 3, black: 3 }, lastMove: null, challengeWindowOpen: false, challengeExpires: null }
+        : null,
       spyResult: null,
     })
   },
@@ -517,6 +526,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
       spyCtx: { ...spyCtx, lastMove: { mover, dest, wasIllegal }, challengeWindowOpen: true, challengeExpires: Date.now() + 5000 },
     })
   },
+  setSpyCtxOnline: (ctx) => set({ spyCtx: ctx }),
+  setQuantumCtxOnline: (ctx) => set({ quantumCtx: ctx }),
+  setCollapsedBranchOnline: (b) => set({ collapsedBranch: b }),
+  setSpyResultOnline: (r) => set({ spyResult: r }),
+
   addChat: (msg) => set(s => ({ chatMessages: [...s.chatMessages.slice(-99), msg] })),
 
   reset: () => set({

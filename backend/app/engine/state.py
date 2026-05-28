@@ -12,6 +12,8 @@ class Player(str, Enum):
 class GameMode(str, Enum):
     LONG = "long"
     SHORT = "short"
+    QUANTUM = "quantum"
+    SPY = "spy"
 
 
 class Phase(str, Enum):

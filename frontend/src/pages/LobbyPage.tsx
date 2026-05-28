@@ -26,18 +26,35 @@ function Modal({ title, onClose, children }: { title: string; onClose: () => voi
   )
 }
 
-function ModeSelect({ label, value, onChange }: { label: string; value: GameMode; onChange: (m: GameMode) => void }) {
+const ALL_MODES: { id: GameMode; icon: string; label: string; accent: 'amber' | 'cyan' | 'red' }[] = [
+  { id: 'short',   icon: '🎯', label: 'Short',   accent: 'amber' },
+  { id: 'long',    icon: '🏛️', label: 'Long',    accent: 'amber' },
+  { id: 'quantum', icon: '⚛️', label: 'Quantum', accent: 'cyan'  },
+  { id: 'spy',     icon: '🕵️', label: 'Spy',     accent: 'red'   },
+]
+
+function ModeSelect({
+  label, value, onChange, modes = ['short', 'long'],
+}: {
+  label: string
+  value: GameMode
+  onChange: (m: GameMode) => void
+  modes?: GameMode[]
+}) {
+  const shown = ALL_MODES.filter(m => modes.includes(m.id))
   return (
     <div className="flex flex-col gap-1.5">
       <label className="text-stone-400 text-xs font-semibold uppercase tracking-wider">{label}</label>
-      <div className="flex gap-2">
-        {(['short', 'long'] as GameMode[]).map(m => (
-          <button key={m} onClick={() => onChange(m)}
-            className={['flex-1 py-2 rounded-lg border text-sm font-semibold transition-colors',
-              value === m
-                ? 'border-amber-500 bg-amber-900/30 text-amber-300'
+      <div className="flex gap-2 flex-wrap">
+        {shown.map(({ id, icon, label: l, accent }) => (
+          <button key={id} onClick={() => onChange(id)}
+            className={['flex-1 min-w-[64px] py-2 rounded-lg border text-xs font-semibold transition-colors',
+              value === id
+                ? accent === 'cyan' ? 'border-cyan-500 bg-cyan-900/30 text-cyan-300'
+                  : accent === 'red' ? 'border-red-500 bg-red-900/30 text-red-300'
+                  : 'border-amber-500 bg-amber-900/30 text-amber-300'
                 : 'border-stone-700 text-stone-500 hover:border-stone-500'].join(' ')}>
-            {m === 'short' ? '🎯 Short' : '🏛️ Long'}
+            {icon} {l}
           </button>
         ))}
       </div>
@@ -239,7 +256,7 @@ function MatchmakingModal({ onClose }: { onClose: () => void }) {
     <Modal title="🏆 Ranked Match" onClose={() => { stopSearch(); onClose() }}>
       {status === 'idle' && (
         <>
-          <ModeSelect label="Game Mode" value={mode} onChange={setMode} />
+          <ModeSelect label="Game Mode" value={mode} onChange={setMode} modes={['short', 'long', 'quantum', 'spy']} />
           <button onClick={startSearch}
             className="py-3 rounded-xl font-bold text-stone-900 bg-gradient-to-b from-amber-300 to-amber-500 border border-amber-600 hover:from-amber-200 hover:to-amber-400 transition-all">
             Find Match
@@ -369,7 +386,7 @@ function PrivateModal({ onClose }: { onClose: () => void }) {
 
       {tab === 'create' && (
         <>
-          <ModeSelect label="Game Mode" value={mode} onChange={setMode} />
+          <ModeSelect label="Game Mode" value={mode} onChange={setMode} modes={['short', 'long', 'quantum', 'spy']} />
           <button onClick={create} disabled={loading}
             className="py-3 rounded-xl font-bold text-stone-900 bg-gradient-to-b from-amber-300 to-amber-500 border border-amber-600 hover:from-amber-200 hover:to-amber-400 transition-all disabled:opacity-50">
             {loading ? 'Creating…' : 'Create Room'}

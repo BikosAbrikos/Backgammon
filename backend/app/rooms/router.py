@@ -24,8 +24,8 @@ async def create_room(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    if req.mode not in ("short", "long"):
-        raise HTTPException(status_code=400, detail="mode must be 'short' or 'long'")
+    if req.mode not in ("short", "long", "quantum", "spy"):
+        raise HTTPException(status_code=400, detail="mode must be 'short', 'long', 'quantum', or 'spy'")
 
     # Generate unique code
     code = _gen_code()

@@ -13,7 +13,7 @@ def _point_is_blocked(point: PointState, player: Player, mode: GameMode) -> bool
     """Return True if the destination point is blocked for the given player."""
     if point.player is None or point.player == player:
         return False
-    if mode == GameMode.SHORT:
+    if mode in (GameMode.SHORT, GameMode.QUANTUM, GameMode.SPY):
         return point.count >= 2
     else:
         return point.count >= 1

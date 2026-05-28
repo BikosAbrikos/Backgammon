@@ -4,7 +4,7 @@ from .state import GameMode, GameState, Player, Phase, PointState, DiceState
 def create_initial_board(mode: GameMode) -> list[PointState]:
     board = [PointState(count=0, player=None) for _ in range(24)]
 
-    if mode == GameMode.SHORT:
+    if mode in (GameMode.SHORT, GameMode.QUANTUM, GameMode.SPY):
         # Standard Western backgammon spread
         # WHITE (moves 23→0): home board is 0-5
         board[23] = PointState(count=2, player=Player.WHITE)
