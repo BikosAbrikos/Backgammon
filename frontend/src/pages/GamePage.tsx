@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useGameStore } from '../store/gameStore'
-import type { GameState, OnlineContext, Player } from '../store/gameStore'
+import type { GameState, OnlineContext, Player, QuantumCtx } from '../store/gameStore'
 import { useAuthStore } from '../store/authStore'
 import type { AuthUser } from '../store/authStore'
 import Board from '../components/Board'
@@ -160,6 +160,25 @@ function WinnerOverlay({ winner, eloChange, myColor, onRestart }: {
   )
 }
 
+// ── Quantum collapse animation ─────────────────────────────────────────────────
+
+function CollapseOverlay({ onDone }: { onDone: () => void }) {
+  useEffect(() => {
+    const t = setTimeout(onDone, 1500)
+    return () => clearTimeout(t)
+  }, [onDone])
+
+  return (
+    <div className="fixed inset-0 flex items-center justify-center z-40 bg-black/60 pointer-events-none">
+      <div className="text-center">
+        <div className="text-6xl mb-3 animate-pulse">⚛️</div>
+        <div className="text-2xl font-bold text-cyan-300">Quantum Collapse!</div>
+        <div className="text-stone-400 text-sm mt-1">One branch becomes reality…</div>
+      </div>
+    </div>
+  )
+}
+
 // ── Chat sidebar ──────────────────────────────────────────────────────────────
 
 const QUICK = ['gg', 'nice move!', 'brb', 'good luck']
@@ -207,6 +226,26 @@ function ChatPanel({ messages, onSend }: {
   )
 }
 
+// ── Quantum status bar ────────────────────────────────────────────────────────
+
+function QuantumStatusBar({ ctx }: { ctx: QuantumCtx }) {
+  const labels: Record<QuantumCtx['phase'], string> = {
+    building_a: '⚛️ Quantum — Building Branch A (🔵 cyan)',
+    building_b: '⚛️ Quantum — Building Branch B (🟠 orange)',
+    opponent: '⚛️ Quantum Superposition — waiting for collapse…',
+  }
+  const colors: Record<QuantumCtx['phase'], string> = {
+    building_a: 'bg-cyan-900/40 border-cyan-500/40 text-cyan-300',
+    building_b: 'bg-orange-900/40 border-orange-500/40 text-orange-300',
+    opponent: 'bg-purple-900/40 border-purple-500/40 text-purple-300',
+  }
+  return (
+    <div className={['px-4 py-1.5 rounded-lg border text-xs font-semibold text-center', colors[ctx.phase]].join(' ')}>
+      {labels[ctx.phase]}
+    </div>
+  )
+}
+
 // ── Main GamePage ─────────────────────────────────────────────────────────────
 
 export default function GamePage() {
@@ -215,15 +254,16 @@ export default function GamePage() {
   const { token, user } = useAuthStore()
   const {
     gameState, gameType, selectedPoint, isRolling, isBotThinking,
-    botLevel, botColor, onlineCtx, chatMessages, eloChange,
+    botLevel, botColor, onlineCtx, chatMessages, eloChange, quantumCtx,
     rollDice, selectPoint, moveTo, clearSelection,
     setBotThinking, applyBotState, setOnlineGame, receiveOnlineState,
-    setEloChange, addChat, reset,
+    setEloChange, addChat, reset, enterQuantumMode,
   } = useGameStore()
 
   const wsRef = useRef<WebSocket | null>(null)
   const [wsStatus, setWsStatus] = useState<'connecting' | 'connected' | 'disconnected'>('connecting')
   const [opponentLeft, setOpponentLeft] = useState(false)
+  const [showCollapse, setShowCollapse] = useState(false)
 
   // ── Online WS management ───────────────────────────────────────────────────
 
@@ -282,6 +322,8 @@ export default function GamePage() {
   }, [roomId, token])
 
   // ── Bot automation ────────────────────────────────────────────────────────
+  // NOTE: gameState?.phase intentionally excluded from deps — including it would
+  // cancel the bot mid-turn when it updates the phase to 'moving' via applyBotState.
 
   useEffect(() => {
     if (gameType !== 'bot' || !botColor || !botLevel || !gameState) return
@@ -320,7 +362,21 @@ export default function GamePage() {
 
     runBot()
     return () => { cancelled = true }
-  }, [gameState?.current_player, gameState?.phase, gameType, botColor])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gameState?.current_player, gameType, botColor])
+
+  // ── Quantum collapse visual feedback ──────────────────────────────────────
+
+  const prevPhaseRef = useRef<QuantumCtx['phase'] | null>(null)
+  useEffect(() => {
+    const prev = prevPhaseRef.current
+    const cur = quantumCtx?.phase ?? null
+    // Show collapse overlay when quantum transitions from 'opponent' to null (collapsed)
+    if (prev === 'opponent' && cur === null) {
+      setShowCollapse(true)
+    }
+    prevPhaseRef.current = cur
+  }, [quantumCtx?.phase])
 
   // ── Online roll / move proxies ─────────────────────────────────────────────
 
@@ -345,24 +401,72 @@ export default function GamePage() {
     return null
   }
 
+  if (!gameState) {
+    return (
+      <div className="flex-1 flex items-center justify-center">
+        <div className="text-amber-400 text-lg animate-pulse">Connecting to game…</div>
+      </div>
+    )
+  }
+
   const isOnline = gameType === 'online' || !!roomId
-  const canRoll = gameState?.phase === 'waiting_roll' && (
+  const canRoll = gameState.phase === 'waiting_roll' && (
     isOnline ? gameState.current_player === onlineCtx?.myColor : true
   )
-  const isBotTurn = gameType === 'bot' && gameState?.current_player === botColor
-  const hasBar = gameState ? gameState.bar[gameState.current_player] > 0 : false
+  const isBotTurn = gameType === 'bot' && gameState.current_player === botColor
+  const hasBar = gameState.bar[gameState.current_player] > 0
 
   const effectiveRoll = isOnline ? onlineRoll : rollDice
   const effectiveMove = isOnline ? onlineMove : moveTo
+
+  // Quantum: can enter quantum mode if it's the player's moving phase (no moves made yet, not online/bot-turn)
+  const canEnterQuantum = !isOnline && !isBotTurn && !quantumCtx &&
+    gameState.phase === 'moving' &&
+    gameState.dice.values.length === 2 &&
+    gameState.dice.remaining.length === (
+      gameState.dice.values[0] === gameState.dice.values[1] ? 4 : 2
+    )
+
+  // Ghost branches to pass to Board during opponent's turn
+  const ghostBranches = quantumCtx?.phase === 'opponent' &&
+    quantumCtx.branchA && quantumCtx.branchB
+    ? {
+        branchA: quantumCtx.branchA,
+        branchB: quantumCtx.branchB,
+        quantumPlayer: quantumCtx.quantumPlayer,
+      }
+    : undefined
 
   function handleRestart() {
     reset()
     navigate('/lobby')
   }
 
+  // Status line text
+  function statusText() {
+    if (!gameState || isBotThinking) return null
+    if (quantumCtx?.phase === 'building_a') return 'Make your moves for Branch A, then use all dice'
+    if (quantumCtx?.phase === 'building_b') return 'Make your moves for Branch B, then use all dice'
+    if (quantumCtx?.phase === 'opponent') return 'Quantum superposition active — awaiting collapse'
+    if (hasBar && gameState.phase === 'moving') return 'Must re-enter from bar first!'
+    if (gameState.phase === 'waiting_roll' && !isBotTurn) {
+      if (isOnline && onlineCtx) {
+        return gameState.current_player === onlineCtx.myColor
+          ? 'Your turn — roll the dice'
+          : `Waiting for ${onlineCtx.opponent.username}…`
+      }
+      return `${gameState.current_player === 'white' ? 'White' : 'Black'} — roll to move`
+    }
+    if (gameState.phase === 'moving' && !hasBar && selectedPoint === null) return 'Select a checker to move'
+    if (selectedPoint !== null) return 'Click a highlighted point to move'
+    return null
+  }
+
+  const status = statusText()
+
   return (
     <div className="flex flex-col min-h-screen">
-      <TopBar gameState={gameState!} onRestart={handleRestart} />
+      <TopBar gameState={gameState} onRestart={handleRestart} />
 
       {/* WS banners */}
       {isOnline && wsStatus === 'connecting' && (
@@ -377,61 +481,68 @@ export default function GamePage() {
       )}
 
       <div className="flex-1 flex flex-col lg:flex-row items-center justify-center gap-6 p-4 lg:p-6">
-        <div className="flex flex-col items-center gap-4 w-full">
+        <div className="flex flex-col items-center gap-4 w-full max-w-[860px]">
 
           {/* Player panel */}
-          {gameState && (
-            <PlayerPanel
-              gameType={gameType}
-              gameState={gameState}
-              onlineCtx={onlineCtx}
-              botLevel={botLevel}
-              botColor={botColor}
-              user={user}
-            />
-          )}
+          <PlayerPanel
+            gameType={gameType}
+            gameState={gameState}
+            onlineCtx={onlineCtx}
+            botLevel={botLevel}
+            botColor={botColor}
+            user={user}
+          />
+
+          {/* Quantum status bar */}
+          {quantumCtx && <QuantumStatusBar ctx={quantumCtx} />}
 
           {/* Status line */}
           <div className="text-sm text-stone-400 h-5">
             {isBotThinking && <span className="text-amber-400">Bot is thinking…</span>}
-            {!isBotThinking && hasBar && gameState?.phase === 'moving' && (
-              <span className="text-red-400 font-semibold">Must re-enter from bar first!</span>
-            )}
-            {!isBotThinking && gameState?.phase === 'waiting_roll' && !isBotTurn && (
-              <span className="text-amber-300">
-                {isOnline && onlineCtx
-                  ? (gameState.current_player === onlineCtx.myColor ? 'Your turn — roll the dice' : `Waiting for ${onlineCtx.opponent.username}…`)
-                  : `${gameState?.current_player === 'white' ? 'White' : 'Black'} — roll to move`}
+            {!isBotThinking && status && (
+              <span className={[
+                quantumCtx?.phase === 'building_a' ? 'text-cyan-400' :
+                quantumCtx?.phase === 'building_b' ? 'text-orange-400' :
+                quantumCtx?.phase === 'opponent' ? 'text-purple-400' :
+                hasBar && gameState?.phase === 'moving' ? 'text-red-400 font-semibold' :
+                selectedPoint !== null ? 'text-green-400' :
+                'text-amber-300',
+              ].join('')}>
+                {status}
               </span>
             )}
-            {!isBotThinking && gameState?.phase === 'moving' && !hasBar && selectedPoint === null && (
-              <span className="text-stone-400">Select a checker to move</span>
-            )}
-            {selectedPoint !== null && (
-              <span className="text-green-400">Click a highlighted point to move</span>
-            )}
           </div>
 
-          {/* Board — scrollable on small screens */}
+          {/* Board — constrained width, scrollable on small screens */}
           <div className="w-full overflow-x-auto pb-2">
-            {gameState && (
-              <Board
-                gameState={gameState}
-                selectedPoint={selectedPoint}
-                onSelectPoint={selectPoint}
-                onMoveToPoint={effectiveMove}
-              />
-            )}
+            <Board
+              gameState={gameState}
+              selectedPoint={selectedPoint}
+              onSelectPoint={selectPoint}
+              onMoveToPoint={effectiveMove}
+              ghostBranches={ghostBranches}
+            />
           </div>
 
-          {gameState && (
+          {/* Dice + quantum button row */}
+          <div className="flex flex-col items-center gap-2">
             <Dice
               dice={gameState.dice}
               onRoll={effectiveRoll}
               canRoll={canRoll && !isBotThinking}
               isRolling={isRolling}
             />
-          )}
+            {canEnterQuantum && (
+              <button
+                onClick={enterQuantumMode}
+                className="px-5 py-2 rounded-xl border border-cyan-600/60 bg-cyan-900/30
+                  text-cyan-300 text-sm font-semibold hover:bg-cyan-900/50 hover:border-cyan-500
+                  transition-all duration-150"
+              >
+                ⚛️ Quantum Mode
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Chat (online only) */}
@@ -440,13 +551,17 @@ export default function GamePage() {
         )}
       </div>
 
-      {gameState?.phase === 'game_over' && gameState.winner && (
+      {gameState.phase === 'game_over' && gameState.winner && (
         <WinnerOverlay
           winner={gameState.winner}
           eloChange={eloChange}
           myColor={onlineCtx?.myColor}
           onRestart={handleRestart}
         />
+      )}
+
+      {showCollapse && (
+        <CollapseOverlay onDone={() => setShowCollapse(false)} />
       )}
     </div>
   )

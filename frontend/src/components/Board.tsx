@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import type { GameState, Player } from '../store/gameStore'
+import type { GameState, Player, QuantumBranchPositions } from '../store/gameStore'
 import Triangle from './Triangle'
 import Checker from './Checker'
 
@@ -8,6 +8,11 @@ interface BoardProps {
   selectedPoint: number | 'bar' | null
   onSelectPoint: (p: number | 'bar') => void
   onMoveToPoint: (p: number | 'off') => void
+  ghostBranches?: {
+    branchA: QuantumBranchPositions
+    branchB: QuantumBranchPositions
+    quantumPlayer: Player
+  }
 }
 
 // Visual layout:
@@ -101,7 +106,7 @@ function BearOffZone({
   )
 }
 
-export default function Board({ gameState, selectedPoint, onSelectPoint, onMoveToPoint }: BoardProps) {
+export default function Board({ gameState, selectedPoint, onSelectPoint, onMoveToPoint, ghostBranches }: BoardProps) {
   const { board, current_player, valid_moves } = gameState
 
   const validDests = useMemo<Set<number | 'off'>>(() => {
@@ -116,49 +121,70 @@ export default function Board({ gameState, selectedPoint, onSelectPoint, onMoveT
   const canBearOffWhite = validDests.has('off') && current_player === 'white'
   const canBearOffBlack = validDests.has('off') && current_player === 'black'
 
+  function getGhostCounts(i: number) {
+    if (!ghostBranches) return { ghostA: undefined, ghostB: undefined }
+    const qp = ghostBranches.quantumPlayer
+    const ptA = ghostBranches.branchA.board[i]
+    const ptB = ghostBranches.branchB.board[i]
+    return {
+      ghostA: ptA.player === qp && ptA.count > 0 ? ptA.count : undefined,
+      ghostB: ptB.player === qp && ptB.count > 0 ? ptB.count : undefined,
+    }
+  }
+
   function renderRow(indices: number[], orientation: 'up' | 'down') {
     const left = indices.slice(0, 6)
     const right = indices.slice(6, 12)
 
     return (
       <div className="flex flex-1 h-full">
-        {left.map(i => (
-          <Triangle
-            key={i}
-            index={i}
-            pointState={board[i]}
-            orientation={orientation}
-            isHighlighted={validDests.has(i)}
-            isSelected={selectedPoint === i}
-            onSelect={() => onSelectPoint(i)}
-            onMove={() => onMoveToPoint(i)}
-            selectedPoint={selectedPoint}
-            currentPlayer={current_player}
-          />
-        ))}
+        {left.map(i => {
+          const { ghostA, ghostB } = getGhostCounts(i)
+          return (
+            <Triangle
+              key={i}
+              index={i}
+              pointState={board[i]}
+              orientation={orientation}
+              isHighlighted={validDests.has(i)}
+              isSelected={selectedPoint === i}
+              onSelect={() => onSelectPoint(i)}
+              onMove={() => onMoveToPoint(i)}
+              selectedPoint={selectedPoint}
+              currentPlayer={current_player}
+              ghostA={ghostA}
+              ghostB={ghostB}
+            />
+          )
+        })}
         {/* Bar placeholder */}
         <div className="w-12" />
-        {right.map(i => (
-          <Triangle
-            key={i}
-            index={i}
-            pointState={board[i]}
-            orientation={orientation}
-            isHighlighted={validDests.has(i)}
-            isSelected={selectedPoint === i}
-            onSelect={() => onSelectPoint(i)}
-            onMove={() => onMoveToPoint(i)}
-            selectedPoint={selectedPoint}
-            currentPlayer={current_player}
-          />
-        ))}
+        {right.map(i => {
+          const { ghostA, ghostB } = getGhostCounts(i)
+          return (
+            <Triangle
+              key={i}
+              index={i}
+              pointState={board[i]}
+              orientation={orientation}
+              isHighlighted={validDests.has(i)}
+              isSelected={selectedPoint === i}
+              onSelect={() => onSelectPoint(i)}
+              onMove={() => onMoveToPoint(i)}
+              selectedPoint={selectedPoint}
+              currentPlayer={current_player}
+              ghostA={ghostA}
+              ghostB={ghostB}
+            />
+          )
+        })}
       </div>
     )
   }
 
   return (
     <div className="flex gap-3 items-stretch w-full" style={{ minWidth: '620px' }}>
-      {/* Bear off zone for BLACK (left side — BLACK moves left→right, bears off at high end) */}
+      {/* Bear off zone for BLACK (left side) */}
       <BearOffZone
         player="black"
         count={gameState.off.black}
@@ -195,7 +221,7 @@ export default function Board({ gameState, selectedPoint, onSelectPoint, onMoveT
           <div className="flex items-center justify-center h-[8%] bg-stone-900/50">
             <div className="h-px flex-1 bg-amber-900/50" />
             <div className="px-4 text-amber-700/60 text-xs font-mono tracking-widest">
-              ◆ BACKGAMMON ◆
+              {ghostBranches ? '⚛ QUANTUM ⚛' : '◆ BACKGAMMON ◆'}
             </div>
             <div className="h-px flex-1 bg-amber-900/50" />
           </div>

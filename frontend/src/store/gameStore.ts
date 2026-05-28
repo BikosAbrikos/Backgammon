@@ -53,21 +53,92 @@ export interface OnlineContext {
   opponent: { username: string; elo: number }
 }
 
+// ── Quantum Backgammon ─────────────────────────────────────────────────────────
+
+export interface QuantumBranchPositions {
+  board: PointState[]
+  bar: Record<Player, number>
+  off: Record<Player, number>
+}
+
+export interface QuantumCtx {
+  phase: 'building_a' | 'building_b' | 'opponent'
+  quantumPlayer: Player
+  /** Board state the moment quantum mode was entered (dice already rolled, no moves yet) */
+  preQuantumState: GameState
+  branchA: QuantumBranchPositions | null
+  branchB: QuantumBranchPositions | null
+}
+
+// ── Helpers ────────────────────────────────────────────────────────────────────
+
+function collapseQuantumState(
+  currentState: GameState,
+  branch: QuantumBranchPositions,
+  quantumPlayer: Player,
+): GameState {
+  const opp: Player = quantumPlayer === 'white' ? 'black' : 'white'
+  const newBoard = currentState.board.map(pt => ({ ...pt }))
+  const newBar = { ...currentState.bar }
+  const newOff = { ...currentState.off }
+
+  // Remove quantum player's checkers from current board
+  for (let i = 0; i < 24; i++) {
+    if (newBoard[i].player === quantumPlayer) {
+      newBoard[i] = { count: 0, player: null }
+    }
+  }
+  newBar[quantumPlayer] = 0
+  newOff[quantumPlayer] = 0
+
+  // Place quantum player's checkers from chosen branch
+  for (let i = 0; i < 24; i++) {
+    const bp = branch.board[i]
+    if (bp.player === quantumPlayer && bp.count > 0) {
+      // If opponent has a single checker here, send it to bar (quantum hit)
+      if (newBoard[i].player === opp && newBoard[i].count === 1) {
+        newBar[opp]++
+        newBoard[i] = { count: 0, player: null }
+      }
+      // Only place if the point isn't blocked by 2+ opponent checkers
+      if (!(newBoard[i].player === opp && newBoard[i].count >= 2)) {
+        newBoard[i] = { count: bp.count, player: quantumPlayer }
+      }
+    }
+  }
+  newBar[quantumPlayer] = branch.bar[quantumPlayer]
+  newOff[quantumPlayer] = branch.off[quantumPlayer]
+
+  const next = { ...currentState, board: newBoard, bar: newBar, off: newOff }
+  next.valid_moves = getValidMoves(next)
+  return next
+}
+
+function extractBranchPositions(state: GameState): QuantumBranchPositions {
+  return {
+    board: state.board.map(pt => ({ ...pt })),
+    bar: { ...state.bar },
+    off: { ...state.off },
+  }
+}
+
+// ── Store ──────────────────────────────────────────────────────────────────────
+
 interface GameStore {
   gameState: GameState | null
   gameType: GameType
   selectedPoint: number | 'bar' | null
   isRolling: boolean
 
-  // Bot config
   botLevel: BotLevel | null
   botColor: Player | null
   isBotThinking: boolean
 
-  // Online config
   onlineCtx: OnlineContext | null
   chatMessages: ChatMessage[]
   eloChange: { white: number; black: number } | null
+
+  quantumCtx: QuantumCtx | null
 
   // Starters
   startLocalGame: (mode: GameMode) => Promise<void>
@@ -82,7 +153,10 @@ interface GameStore {
   moveTo: (to: number | 'off') => void
   clearSelection: () => void
 
-  // Bot automation (called from GamePage useEffect)
+  // Quantum
+  enterQuantumMode: () => void
+
+  // Bot automation
   setBotThinking: (v: boolean) => void
   applyBotState: (state: GameState) => void
 
@@ -103,6 +177,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   onlineCtx: null,
   chatMessages: [],
   eloChange: null,
+  quantumCtx: null,
 
   startLocalGame: async (mode) => {
     const { data } = await api.post<GameState>('/game/new', { mode })
@@ -115,6 +190,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       onlineCtx: null,
       chatMessages: [],
       eloChange: null,
+      quantumCtx: null,
     })
   },
 
@@ -129,6 +205,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       onlineCtx: null,
       chatMessages: [],
       eloChange: null,
+      quantumCtx: null,
     })
   },
 
@@ -142,20 +219,33 @@ export const useGameStore = create<GameStore>((set, get) => ({
       botColor: null,
       chatMessages: [],
       eloChange: null,
+      quantumCtx: null,
     })
   },
 
   receiveOnlineState: (state) => set({ gameState: state }),
-
   setEloChange: (change) => set({ eloChange: change }),
 
   rollDice: () => {
-    const { gameState, gameType } = get()
+    const { gameState, gameType, quantumCtx } = get()
     if (!gameState || gameState.phase !== 'waiting_roll') return
-    if (gameType === 'online') return // online rolls go through WS
+    if (gameType === 'online') return
+
+    let currentState = gameState
+
+    // Quantum collapse: triggers when the quantum player rolls their next turn
+    if (
+      quantumCtx?.phase === 'opponent' &&
+      currentState.current_player === quantumCtx.quantumPlayer &&
+      quantumCtx.branchA && quantumCtx.branchB
+    ) {
+      const chosen = Math.random() < 0.5 ? quantumCtx.branchA : quantumCtx.branchB
+      currentState = collapseQuantumState(currentState, chosen, quantumCtx.quantumPlayer)
+      set({ quantumCtx: null })
+    }
 
     const dice = localRollDice()
-    let next: GameState = { ...gameState, dice, phase: 'moving' }
+    let next: GameState = { ...currentState, dice, phase: 'moving' }
     next.valid_moves = getValidMoves(next)
     if (!next.valid_moves.length) next = advanceTurn(next)
 
@@ -164,9 +254,12 @@ export const useGameStore = create<GameStore>((set, get) => ({
   },
 
   selectPoint: (point) => {
-    const { gameState, selectedPoint, gameType, onlineCtx } = get()
+    const { gameState, selectedPoint, gameType, onlineCtx, botColor } = get()
     if (!gameState || gameState.phase !== 'moving') return
+
+    // Security: block interacting with opponent's turn
     if (gameType === 'online' && onlineCtx && gameState.current_player !== onlineCtx.myColor) return
+    if (gameType === 'bot' && botColor && gameState.current_player === botColor) return
 
     if (selectedPoint === point) { set({ selectedPoint: null }); return }
 
@@ -195,12 +288,60 @@ export const useGameStore = create<GameStore>((set, get) => ({
   },
 
   moveTo: (to) => {
-    const { selectedPoint, gameState, gameType } = get()
+    const { selectedPoint, gameState, gameType, botColor, quantumCtx } = get()
     if (selectedPoint === null || !gameState) return
-    if (gameType === 'online') return // online moves go through WS
+    if (gameType === 'online') return
+    if (gameType === 'bot' && botColor && gameState.current_player === botColor) return
 
     const next = applyMove(gameState, selectedPoint, to)
+
+    // ── Quantum branch handling ────────────────────────────────────────────────
+    if (quantumCtx?.phase === 'building_a' && next.phase === 'waiting_roll') {
+      // Branch A complete — save positions and start Branch B from pre-quantum state
+      const branchA = extractBranchPositions(next)
+      const branchBStart: GameState = { ...quantumCtx.preQuantumState }
+      set({
+        gameState: branchBStart,
+        selectedPoint: null,
+        quantumCtx: { ...quantumCtx, phase: 'building_b', branchA },
+      })
+      return
+    }
+
+    if (quantumCtx?.phase === 'building_b' && next.phase === 'waiting_roll') {
+      // Branch B complete — commit quantum state, advance turn to opponent
+      const branchB = extractBranchPositions(next)
+      const opponentTurn = advanceTurn(quantumCtx.preQuantumState)
+      set({
+        gameState: opponentTurn,
+        selectedPoint: null,
+        quantumCtx: { ...quantumCtx, phase: 'opponent', branchB },
+      })
+      return
+    }
+
     set({ gameState: next, selectedPoint: null })
+  },
+
+  enterQuantumMode: () => {
+    const { gameState, quantumCtx } = get()
+    if (!gameState || gameState.phase !== 'moving') return
+    if (quantumCtx !== null) return // Already in quantum mode
+
+    // Only allow at the very start of the moving phase (no dice consumed yet)
+    const expectedDice = gameState.dice.values.length === 2 &&
+      gameState.dice.values[0] === gameState.dice.values[1] ? 4 : 2
+    if (gameState.dice.remaining.length !== expectedDice) return
+
+    set({
+      quantumCtx: {
+        phase: 'building_a',
+        quantumPlayer: gameState.current_player,
+        preQuantumState: gameState,
+        branchA: null,
+        branchB: null,
+      },
+    })
   },
 
   clearSelection: () => set({ selectedPoint: null }),
@@ -211,6 +352,6 @@ export const useGameStore = create<GameStore>((set, get) => ({
   reset: () => set({
     gameState: null, selectedPoint: null, isRolling: false,
     botLevel: null, botColor: null, isBotThinking: false,
-    onlineCtx: null, chatMessages: [], eloChange: null,
+    onlineCtx: null, chatMessages: [], eloChange: null, quantumCtx: null,
   }),
 }))
