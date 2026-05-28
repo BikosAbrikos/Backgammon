@@ -1,108 +1,176 @@
 # Backgammon Pro
 
-A full-stack multiplayer backgammon platform built from scratch — featuring real-time ranked play, three-tier AI opponents, and two completely original game modes that don't exist anywhere else: **Spy** and **Quantum**.
+> A production-grade multiplayer backgammon platform with real-time ranked play, a three-tier AI engine, and two original game modes — **Spy** and **Quantum** — that fundamentally reimagine what the 5,000-year-old game can be.
+
+**Live demo:** [backgammon-pro.vercel.app](https://backgammon-pro.vercel.app)  
+**Repository:** [github.com/BikosAbrikos/Backgammon](https://github.com/BikosAbrikos/Backgammon)
 
 ---
 
-## What is this?
+## What Was Built
 
-Backgammon Pro is an online backgammon game with everything you'd expect from a serious platform — ELO rankings, player profiles, friend system, private rooms — plus two experimental modes that reimagine what backgammon can be. The entire game engine was written from scratch in both Python (server-authoritative for online play) and TypeScript (client-side for local/bot games).
+This is not a port of a physical game. Every layer — game engine, multiplayer server, AI, matchmaking, and all UI — was designed and written from scratch.
 
-**Tech stack:** FastAPI · WebSockets · React 19 · TypeScript · Zustand · Tailwind CSS · PostgreSQL · JWT auth
+The core achievement is architectural: the same backgammon rule engine was implemented in **both Python and TypeScript** so that online games are server-authoritative (preventing cheating) while offline/bot games run entirely in the browser with zero latency. The two implementations stay in sync and share the same rule logic.
+
+On top of that foundation, two entirely original game modes were designed from first principles: one that adds **deception and psychology** to the game, and one that introduces **quantum superposition** as a core mechanic.
 
 ---
 
-## Game Modes
+## Feature Overview
 
-### Classic Modes
+| Category | What's included |
+|---|---|
+| **Game modes** | Short (Western), Long, Local 2-player, Bot, Online Ranked, Private Room, Spy, Quantum |
+| **Multiplayer** | Real-time WebSocket gameplay, ELO matchmaking, reconnection handling |
+| **AI** | 3 difficulty levels with distinct decision algorithms |
+| **Accounts** | JWT auth, ELO rating, win streaks, match history, 8 avatars |
+| **Social** | Friend requests, private invite rooms (6-char code) |
+| **UI/UX** | Board flip for black player, pip count display, opponent-turn overlay, resign flow |
 
-**Short (Western Rules)**
-Standard backgammon. Land on a lone opponent checker and send it to the bar. First to bear off all 15 pieces wins.
+---
 
-**Long**
-A single checker is enough to block a point — no hitting. Slower, more positional, forces you to think several moves ahead before committing.
+## Technical Architecture
 
-**Local 2P**
-Pass-and-play on the same device. No account required.
+### Dual Engine Design
 
-**Bot**
-Three difficulty levels:
-- *Beginner* — plays random legal moves
-- *Medium* — scores each move by heuristics (bearing off, hitting blots, building points)
-- *Advanced* — full board evaluation: pip count, prime formation, blot exposure, home-board strength
+The game engine exists twice: once in Python (backend) and once in TypeScript (frontend). They are kept structurally identical and cover identical rule logic:
 
-**Online / Ranked**
-WebSocket matchmaking with ELO rating. The system matches you by skill level and expands the search window over time so you never wait too long. Results are saved, ELO is updated, and win streaks are tracked.
+```
+backend/app/engine/          frontend/src/engine/
+  state.py    ←──────────→     (types in gameStore.ts)
+  rules.py    ←──────────→     rules.ts
+  moves.py    ←──────────→     moves.ts
+  dice.py     ←──────────→     dice.ts
+  setup.py    ←──────────→     (initial state in gameStore)
+```
 
-**Private Room**
-Generate a 6-character invite code and share it with anyone. The room is yours for 15 minutes — after both players connect, the game is live.
+- **Online games** — every move is validated server-side before being applied. The client applies moves locally (batch model) and the server confirms; if the server rejects a move, the client state rolls back. This prevents any client-side manipulation.
+- **Offline/bot games** — the TypeScript engine runs entirely in the browser. No round-trip to the server means zero input latency and full offline playability.
+
+### WebSocket Protocol
+
+Two WebSocket endpoints handle all real-time communication:
+
+- `/ws/matchmaking` — queue management, ELO-based matching (window starts at ±150, expands ±50 every 15 s, caps at ±600)
+- `/ws/game/{room_id}` — authenticated game session with typed message protocol
+
+**Batch move model:** When playing online (short/long modes), the client applies all moves for a turn locally and sends them as a single `batch_moves` packet when the turn ends. The opponent sees only the completed turn — not each individual move — eliminating mid-turn state flicker and halving round-trip overhead.
+
+### AI Engine
+
+The three bot levels use genuinely different algorithms, not just different speeds:
+
+| Level | Algorithm |
+|---|---|
+| Beginner | Uniform random selection among legal moves |
+| Medium | Per-move heuristic scoring: +4 bear off, +5 hit blot, +3 make point, −3 expose blot |
+| Advanced | Full board state evaluation: pip count delta, prime length, blot exposure count, home board occupation score |
+
+Bot difficulty also affects Spy mode behaviour: the advanced bot calibrates challenge probability based on move legality patterns, while the beginner bot challenges at random.
+
+### Stack
+
+**Backend:** Python · FastAPI · async SQLAlchemy · asyncpg (PostgreSQL) / aiosqlite (dev) · python-jose (JWT) · bcrypt  
+**Frontend:** React 19 · TypeScript · Vite · Zustand · React Router 7 · Tailwind CSS 4 · Axios
 
 ---
 
 ## Spy Mode
 
-> *"Did they just cheat? Or was that legal?"*
+> *Did they just cheat? Or was that legal?*
 
-Every player starts each game with **3 Spy Tokens**. At any point during your turn, you can spend a token to make an **illegal move** — moving a piece anywhere on the board regardless of dice values, direction, or blocking rules.
+Spy Mode is an original game mechanic that injects **psychological deception** into backgammon.
 
-After every single move (legal or not), a **7-second challenge window** opens for the opponent.
+### The Rules
 
-| Outcome | What happened |
+Each player begins with **3 Spy Tokens**. Spending a token lets you make an **illegal move** — placing any piece anywhere on the board, ignoring dice values, direction, and blocking rules entirely.
+
+After *every* move — legal or not — a **7-second challenge window** opens:
+
+| Scenario | Outcome |
 |---|---|
-| **Caught** | The move was illegal — piece goes back to your bar, you lose a token, your turn ends |
-| **Missed** | The move was actually legal — challenge fails, opponent looks foolish, game continues |
-| **Timeout** | Opponent doesn't challenge in time — the move stands, no questions asked |
+| Illegal move, opponent challenges | **Caught** — piece returns to bar, token consumed, turn forfeited |
+| Legal move, opponent challenges | **Missed** — challenge fails, the move stands, game continues |
+| Any move, no challenge in 7 s | **Timeout** — move stands unconditionally |
 
-**Why it works as a game mode:**
+### Why It Works
 
-The brilliance of Spy mode is pure psychology. Even a completely standard, by-the-rules move now carries a question mark over it. Your opponent has to decide: *is this a cheat or not?* Challenge too often and you drain your turns second-guessing legal plays. Never challenge and your opponent will exploit every token they have. The meta-game of reading your opponent's behavior — and controlling how yours appears — adds a layer of deception that turns backgammon into something closer to poker.
+The mechanic exploits the fundamental asymmetry of information. Once Spy Mode is active, **every move becomes suspicious** — including completely normal ones. The opponent faces a decision on every single turn: challenge or let it pass?
 
-Tokens are finite. Use them wisely. Save them for the moment that actually matters.
+- Challenge too often → waste time and create psychological pressure that can backfire on legal moves
+- Never challenge → opponent freely exploits all three tokens at decisive moments
+
+The real game becomes one of **behavioral reading**. Players must manage their token usage to stay unpredictable, decide whether to "burn" a token on a low-stakes position to build credibility for a later bluff, and read whether the opponent is over-challenging or sleeping. It turns backgammon — historically a perfect-information game — into something resembling poker, where the board state matters less than what your opponent thinks you believe.
 
 ---
 
 ## Quantum Mode
 
-> *"Your position is in superposition — until the universe decides."*
+> *Your position exists in superposition — until the universe collapses.*
 
-Quantum mode is inspired by the thought experiment of a particle existing in two states simultaneously until observed.
+Quantum Mode is an original mechanic inspired by quantum superposition: the principle that a particle can exist in multiple states simultaneously until it is observed.
 
-**How it works:**
+### The Mechanic
 
-When you roll the dice, instead of making a single sequence of moves, you play across **two simultaneous branches of reality**:
+When the quantum player rolls the dice, their turn **branches into two parallel realities**:
 
-- **Branch A** — your first half of moves, played normally
-- **Branch B** — the second half of moves, played normally
+```
+Roll dice
+    │
+    ├─── Branch A: player makes first half of moves normally
+    │         (captured and frozen as Branch A position)
+    │
+    └─── Branch B: player makes second half of moves normally
+              (captured and frozen as Branch B position)
+```
 
-Both branches are captured and frozen. Your opponent then takes their turn on a *pre-branch* board — they see ghost overlays of both possible positions (cyan for Branch A, orange for Branch B) but can't be sure which reality they're in.
+The opponent then plays their turn on the **pre-branch board** — the board as it was before either branch existed. They can see both branch positions rendered as ghost overlays (cyan = Branch A, orange = Branch B), but the actual board is still the pre-branch state.
 
-When your next turn comes around, the universe **collapses** — one branch is selected at random, 50/50. Your pieces snap to that position. The other branch vanishes as if it never happened.
+When the quantum player's **next turn** arrives, the universe collapses:
 
-**The twist:** If your collapsed pieces land on a point where the opponent has a single checker, it gets sent to the bar — even though that "version" of you never made that move while they were watching.
+```
+Quantum player rolls
+    │
+    ├─── 50% → Branch A survives, Branch B is erased
+    └─── 50% → Branch B survives, Branch A is erased
 
-**Why it changes everything:**
+If collapsed pieces overlap a lone opponent checker → Quantum Hit (piece to bar)
+```
 
-Standard backgammon is a perfect information game — both players always know the exact board state. Quantum mode shatters that. You have to plan not for one board position but for two futures at once, and your opponent has to defend against both. Knowing a collapse is coming in two turns but not knowing *which* branch survives forces a completely different kind of positional thinking. Aggressive or defensive? Block now or leave yourself flexible? The right answer depends on which universe you end up in.
+### Why It Changes Everything
 
-It rewards players who can hold multiple strategic plans in parallel and punishes those who commit too early.
+Standard backgammon has **perfect information** — both players always know exactly where every piece is. Quantum Mode eliminates that guarantee for one player's pieces each turn.
+
+The consequences cascade:
+
+- **The quantum player** must construct two strategically coherent plans from the same dice roll simultaneously. Both branches need to be defensible, because either one could become reality.
+- **The opponent** must decide whether to play aggressively or defensively against a board position that will change unpredictably. Blocking one branch might leave the other branch free. Attacking might expose you to a quantum hit.
+- **Quantum hits** can remove pieces that were "safe" — pieces the opponent placed after seeing branch A, which then get hit by branch B's collapse.
+
+The result is a game where committing too early is punished. The strongest players are those who can **hold two independent strategies in parallel** and adapt the moment the collapse is revealed.
 
 ---
 
-## Why Play This Instead of Other Backgammon Apps?
+## Why This Project Stands Out
 
-Most digital backgammon games are ports — they take the physical game and put it on a screen. This project was built with the question: *what can backgammon become when you remove the constraints of a physical board?*
+### Technical originality
+The dual-engine architecture (identical rule logic in two languages, server-authoritative for online, client-side for offline) is not a common approach for browser games. It was chosen specifically to solve the anti-cheat problem without sacrificing the responsiveness of local play.
 
-**The original modes are genuinely new.** Spy and Quantum don't exist as implemented features anywhere else. They're not gimmicks — they're full game modes with consistent rulesets, working online multiplayer, and AI support.
+### Game design originality
+Spy Mode and Quantum Mode are not modifications of existing backgammon variants. They were designed from first principles to introduce new strategic dimensions — deception and probabilistic futures — that are impossible to implement on a physical board. Both modes have full AI support, complete online multiplayer implementations, and their own UI systems.
 
-**The AI actually plays differently by level.** Beginner, Medium, and Advanced aren't just speed adjustments — they use fundamentally different decision logic. Playing against Advanced will teach you real backgammon concepts.
+### Production completeness
+This is not a prototype. It includes ELO-rated competitive play, persistent accounts, match history, a friend system, private rooms, reconnection handling, a three-tier AI, and a full mobile-responsive UI. Every component was built by hand.
 
-**It's built for competitive play.** ELO ranking, match history, win streaks, friend system, private rooms — everything you'd expect from a platform, not a demo.
-
-**No pay walls, no timers, no ads.** Open source. Just backgammon.
+### Scope
+Eight distinct game modes. Two original game designs. A complete competitive platform. A custom rule engine in two languages. A three-algorithm AI. All of it in one project.
 
 ---
 
 ## Running Locally
+
+**Prerequisites:** Python 3.11+, Node.js 18+
 
 **Backend**
 ```bash
@@ -110,6 +178,7 @@ cd backend
 pip install -r requirements.txt
 uvicorn app.main:app --reload
 ```
+The backend starts on `http://localhost:8000`. SQLite is used automatically when no `DATABASE_URL` is set.
 
 **Frontend**
 ```bash
@@ -117,8 +186,14 @@ cd frontend
 npm install
 npm run dev
 ```
+The frontend starts on `http://localhost:5173` and connects to the backend automatically.
 
-Set `VITE_API_URL` in `frontend/.env` to your backend URL. By default both run on localhost and connect automatically.
+**Environment variables (optional)**
+```env
+# frontend/.env
+VITE_API_URL=http://localhost:8000
+VITE_WS_URL=ws://localhost:8000
+```
 
 ---
 
@@ -126,20 +201,22 @@ Set `VITE_API_URL` in `frontend/.env` to your backend URL. By default both run o
 
 ```
 backend/
-  app/
-    engine/       # Game rules, move validation, dice, board setup
-    ws/           # WebSocket handlers — matchmaking + live game
-    auth/         # JWT authentication
-    users/        # Profiles, ELO, game history
-    friends/      # Friend requests
-    rooms/        # Private room creation
+└── app/
+    ├── engine/        # Core game logic: rules, moves, dice, board setup
+    ├── ws/            # WebSocket layer: matchmaking queue + live game handler
+    ├── auth/          # JWT authentication, bcrypt password hashing
+    ├── users/         # Profiles, ELO, leaderboard, game history
+    ├── friends/       # Friend request system
+    ├── rooms/         # Private room creation and joining
+    ├── models.py      # SQLAlchemy ORM (User, Game, Friend, Room)
+    └── main.py        # FastAPI app entry point
 
 frontend/
-  src/
-    engine/       # TypeScript mirror of the Python engine (offline/bot play)
-    store/        # Zustand state (auth + game)
-    pages/        # Route-level components
-    components/   # Board, Checkers, Dice, UI
+└── src/
+    ├── engine/        # TypeScript game engine (mirrors Python engine)
+    ├── store/         # Zustand state management (auth + game)
+    ├── pages/         # Full-page route components
+    └── components/    # Board, Checkers, Dice, Triangles, UI primitives
 ```
 
 ---
