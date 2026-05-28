@@ -955,7 +955,9 @@ export default function GamePage() {
   }
 
   // Whether board interaction should be blocked (opponent's turn in online)
-  const boardBlocked = isOnline && !isMyTurn
+  const boardBlocked =
+    (isOnline && !isMyTurn) ||
+    (gameType === 'bot' && !!botColor && gameState.current_player === botColor)
 
   return (
     <div className="flex flex-col min-h-screen">
