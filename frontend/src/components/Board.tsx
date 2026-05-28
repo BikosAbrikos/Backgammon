@@ -17,48 +17,75 @@ interface BoardProps {
 }
 
 // Visual layout:
-// Top row (orientation=down), left-to-right: 12..17 | 18..23
-// Bottom row (orientation=up), left-to-right: 11..6 | 5..0
-const TOP_ROW = [12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23]
-const BOTTOM_ROW = [11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0]
+// Top row  (orientation=down): points 12..23 left-to-right
+// Bottom row (orientation=up): points 11..0  left-to-right
+const TOP_ROW    = [12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23]
+const BOTTOM_ROW = [11, 10,  9,  8,  7,  6,  5,  4,  3,  2,  1,  0]
+
+// ── Bar Zone ──────────────────────────────────────────────────────────────────
 
 function BarZone({
-  gameState,
-  selectedPoint,
-  onSelectBar,
+  gameState, selectedPoint, onSelectBar,
 }: {
   gameState: GameState
   selectedPoint: number | 'bar' | null
   onSelectBar: () => void
 }) {
   const { bar, current_player } = gameState
-  const whiteBar = bar.white
-  const blackBar = bar.black
 
   return (
-    <div className="flex flex-col justify-center items-center gap-2 w-12 rounded" style={{ background: '#0d4a1f' }}>
-      {/* Black's bar checkers (top) */}
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 6,
+        width: 48,
+        position: 'relative',
+        // Dark mahogany post
+        background: 'linear-gradient(90deg, #1c0a04 0%, #2e1208 20%, #240e06 50%, #2e1208 80%, #1c0a04 100%)',
+        boxShadow: 'inset 3px 0 6px rgba(0,0,0,0.6), inset -3px 0 6px rgba(0,0,0,0.6)',
+      }}
+    >
+      {/* Thin centre ornament line */}
+      <div style={{
+        position: 'absolute',
+        top: 0, bottom: 0,
+        left: '50%', width: 1,
+        transform: 'translateX(-50%)',
+        background: 'linear-gradient(180deg, transparent 0%, rgba(200,140,40,0.25) 20%, rgba(200,140,40,0.25) 80%, transparent 100%)',
+        pointerEvents: 'none',
+      }} />
+
+      {/* Black's bar checkers — top half */}
       <div
-        className={['flex flex-col items-center gap-0.5', current_player === 'black' && blackBar > 0 ? 'cursor-pointer' : ''].join(' ')}
-        onClick={current_player === 'black' && blackBar > 0 ? onSelectBar : undefined}
+        style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, cursor: current_player === 'black' && bar.black > 0 ? 'pointer' : 'default' }}
+        onClick={current_player === 'black' && bar.black > 0 ? onSelectBar : undefined}
       >
-        {Array.from({ length: blackBar }).map((_, i) => (
-          <Checker key={i} player="black" size="sm"
-            isSelected={i === blackBar - 1 && selectedPoint === 'bar' && current_player === 'black'}
+        {Array.from({ length: bar.black }).map((_, i) => (
+          <Checker
+            key={i}
+            player="black"
+            size="sm"
+            isSelected={i === bar.black - 1 && selectedPoint === 'bar' && current_player === 'black'}
           />
         ))}
       </div>
 
-      <div className="h-4" />
+      <div style={{ height: 8 }} />
 
-      {/* White's bar checkers (bottom) */}
+      {/* White's bar checkers — bottom half */}
       <div
-        className={['flex flex-col-reverse items-center gap-0.5', current_player === 'white' && whiteBar > 0 ? 'cursor-pointer' : ''].join(' ')}
-        onClick={current_player === 'white' && whiteBar > 0 ? onSelectBar : undefined}
+        style={{ display: 'flex', flexDirection: 'column-reverse', alignItems: 'center', gap: 3, cursor: current_player === 'white' && bar.white > 0 ? 'pointer' : 'default' }}
+        onClick={current_player === 'white' && bar.white > 0 ? onSelectBar : undefined}
       >
-        {Array.from({ length: whiteBar }).map((_, i) => (
-          <Checker key={i} player="white" size="sm"
-            isSelected={i === whiteBar - 1 && selectedPoint === 'bar' && current_player === 'white'}
+        {Array.from({ length: bar.white }).map((_, i) => (
+          <Checker
+            key={i}
+            player="white"
+            size="sm"
+            isSelected={i === bar.white - 1 && selectedPoint === 'bar' && current_player === 'white'}
           />
         ))}
       </div>
@@ -66,55 +93,115 @@ function BarZone({
   )
 }
 
+// ── Bear-Off Tray ─────────────────────────────────────────────────────────────
+
 function BearOffZone({
-  player,
-  count,
-  isValidDest,
-  onMove,
+  player, count, isValidDest, onMove,
 }: {
   player: Player
   count: number
   isValidDest: boolean
   onMove: () => void
 }) {
+  const isWhite = player === 'white'
+  const pipsToShow = Math.min(count, 10)
+
   return (
     <div
-      className={[
-        'flex flex-col items-center justify-end gap-0.5 p-2 rounded-lg h-full',
-        'border-2 transition-all duration-150 min-w-[3rem]',
-        isValidDest
-          ? 'border-green-400 bg-green-800/40 cursor-pointer highlight-pulse'
-          : 'border-green-900/60 bg-green-950/30',
-      ].join(' ')}
+      className={isValidDest ? 'tray-glow' : ''}
       onClick={isValidDest ? onMove : undefined}
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'flex-end',
+        gap: 6,
+        minWidth: 52,
+        padding: '10px 7px 12px',
+        borderRadius: 12,
+        cursor: isValidDest ? 'pointer' : 'default',
+        transition: 'border-color 0.15s ease, box-shadow 0.15s ease',
+        // Inset tray look
+        background: isValidDest
+          ? 'linear-gradient(180deg, #0c2e18, #0f3a20)'
+          : 'linear-gradient(180deg, #0a1e10, #0c2814)',
+        border: isValidDest
+          ? '1.5px solid rgba(74,222,128,0.55)'
+          : '1px solid rgba(200,150,50,0.14)',
+        boxShadow: isValidDest
+          ? '0 0 0 0'  // overridden by tray-glow CSS animation
+          : 'inset 0 2px 10px rgba(0,0,0,0.45), inset 0 0 3px rgba(0,0,0,0.3)',
+      }}
     >
-      <div className="text-xs text-stone-400 mb-1">{player === 'white' ? '⬜' : '⬛'} Off</div>
-      <div className="flex flex-col gap-0.5">
-        {Array.from({ length: Math.min(count, 8) }).map((_, i) => (
-          <div
-            key={i}
-            className={[
-              'w-6 h-2 rounded-full border',
-              player === 'white'
-                ? 'bg-amber-100 border-amber-400'
-                : 'bg-stone-700 border-stone-500',
-            ].join(' ')}
-          />
-        ))}
-        {count > 8 && <div className="text-xs text-stone-300 text-center">{count}</div>}
+      {/* Player icon + count */}
+      <div style={{ textAlign: 'center', lineHeight: 1 }}>
+        <div style={{ fontSize: 11, marginBottom: 3 }}>{isWhite ? '⬜' : '⬛'}</div>
+        <div style={{
+          fontSize: 13,
+          fontWeight: 700,
+          fontFamily: 'monospace',
+          color: isValidDest ? '#86efac' : 'rgba(210,175,100,0.55)',
+          lineHeight: 1,
+        }}>
+          {count}<span style={{ fontSize: 9, opacity: 0.6 }}>/15</span>
+        </div>
       </div>
+
+      {/* Stacked checker slivers */}
+      {pipsToShow > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 2.5, alignItems: 'center', width: '100%' }}>
+          {Array.from({ length: pipsToShow }).map((_, i) => (
+            <div
+              key={i}
+              style={{
+                width: 34,
+                height: 7,
+                borderRadius: 4,
+                background: isWhite
+                  ? 'radial-gradient(ellipse at 40% 40%, #f5e8c0 0%, #d4a83a 60%, #a87018 100%)'
+                  : 'radial-gradient(ellipse at 40% 40%, #4a2e18 0%, #1e0e06 60%, #0c0502 100%)',
+                boxShadow: isWhite
+                  ? '0 1px 2px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,252,220,0.35)'
+                  : '0 1px 2px rgba(0,0,0,0.65), inset 0 1px 0 rgba(140,80,30,0.2)',
+              }}
+            />
+          ))}
+          {count > 10 && (
+            <div style={{ fontSize: 9, fontFamily: 'monospace', color: 'rgba(210,175,100,0.45)', lineHeight: 1 }}>
+              +{count - 10}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Empty tray hint when no checkers borne off */}
+      {count === 0 && (
+        <div style={{
+          width: 34, height: 7, borderRadius: 4,
+          border: '1px dashed rgba(200,150,50,0.18)',
+          opacity: 0.4,
+        }} />
+      )}
     </div>
   )
 }
 
-export default function Board({ gameState, selectedPoint, onSelectPoint, onMoveToPoint, ghostBranches, spyCtx }: BoardProps) {
+// ── Main Board ────────────────────────────────────────────────────────────────
+
+export default function Board({
+  gameState, selectedPoint, onSelectPoint, onMoveToPoint, ghostBranches, spyCtx,
+}: BoardProps) {
   const { board, current_player, valid_moves } = gameState
 
-  // Guard: board hasn't been populated yet (online game waiting for WS state)
   if (!board || board.length < 24) {
     return (
-      <div className="flex-1 flex items-center justify-center h-96 rounded-2xl border border-stone-800/40 bg-stone-900/20">
-        <span className="text-amber-400 animate-pulse">Connecting to game…</span>
+      <div style={{
+        flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
+        height: 400, borderRadius: 16,
+        border: '1px solid rgba(80,60,20,0.3)',
+        background: 'rgba(15,10,5,0.5)',
+      }}>
+        <span style={{ color: '#f59e0b', fontSize: 15, opacity: 0.7 }}>Connecting…</span>
       </div>
     )
   }
@@ -130,7 +217,6 @@ export default function Board({ gameState, selectedPoint, onSelectPoint, onMoveT
     )
   }, [selectedPoint, valid_moves])
 
-  // Spy mode: red-highlighted illegal destinations (all board points not in validDests)
   const spyDests = useMemo<Set<number>>(() => {
     if (selectedPoint === null) return new Set()
     if (!spyCtx || spyCtx.tokensRemaining[current_player] <= 0) return new Set()
@@ -145,9 +231,6 @@ export default function Board({ gameState, selectedPoint, onSelectPoint, onMoveT
   const canBearOffWhite = validDests.has('off') && current_player === 'white'
   const canBearOffBlack = validDests.has('off') && current_player === 'black'
 
-  // Returns display state and ghost counts for a single point during quantum superposition.
-  // Certain pieces (same count in both branches) are shown solid via displayPt.
-  // Ghost counts are ONLY the uncertain extras — different between branches.
   function getQuantumPointData(i: number): { displayPt: PointState; ghostA: number; ghostB: number } {
     if (!ghostBranches) return { displayPt: board[i], ghostA: 0, ghostB: 0 }
     const qp = ghostBranches.quantumPlayer
@@ -155,7 +238,6 @@ export default function Board({ gameState, selectedPoint, onSelectPoint, onMoveT
     const countB = ghostBranches.branchB.board[i].player === qp ? ghostBranches.branchB.board[i].count : 0
     const certain = Math.min(countA, countB)
     const basePt = board[i]
-    // Hide quantum player's pre-move pieces; replace with certain count
     const displayPt: PointState = basePt.player === qp
       ? (certain > 0 ? { count: certain, player: qp } : { count: 0, player: null })
       : basePt
@@ -163,17 +245,16 @@ export default function Board({ gameState, selectedPoint, onSelectPoint, onMoveT
   }
 
   function renderRow(indices: number[], orientation: 'up' | 'down') {
-    const left = indices.slice(0, 6)
+    const left  = indices.slice(0, 6)
     const right = indices.slice(6, 12)
 
     return (
-      <div className="flex flex-1 h-full">
+      <div style={{ display: 'flex', flex: 1, height: '100%' }}>
         {left.map(i => {
           const { displayPt, ghostA, ghostB } = getQuantumPointData(i)
           return (
             <Triangle
-              key={i}
-              index={i}
+              key={i} index={i}
               pointState={displayPt}
               orientation={orientation}
               isHighlighted={validDests.has(i)}
@@ -190,14 +271,15 @@ export default function Board({ gameState, selectedPoint, onSelectPoint, onMoveT
             />
           )
         })}
-        {/* Bar placeholder */}
-        <div className="w-12" />
+
+        {/* Bar column spacer */}
+        <div style={{ width: 48, flexShrink: 0 }} />
+
         {right.map(i => {
           const { displayPt, ghostA, ghostB } = getQuantumPointData(i)
           return (
             <Triangle
-              key={i}
-              index={i}
+              key={i} index={i}
               pointState={displayPt}
               orientation={orientation}
               isHighlighted={validDests.has(i)}
@@ -219,8 +301,9 @@ export default function Board({ gameState, selectedPoint, onSelectPoint, onMoveT
   }
 
   return (
-    <div className="flex gap-3 items-stretch w-full" style={{ minWidth: '620px' }}>
-      {/* Bear off zone for BLACK (left side) */}
+    <div style={{ display: 'flex', gap: 10, alignItems: 'stretch', width: '100%', minWidth: 640 }}>
+
+      {/* ── Bear-off tray: BLACK (left) ───────────────────────────────── */}
       <BearOffZone
         player="black"
         count={gameState.off.black}
@@ -228,23 +311,50 @@ export default function Board({ gameState, selectedPoint, onSelectPoint, onMoveT
         onMove={() => onMoveToPoint('off')}
       />
 
-      {/* Main board */}
+      {/* ── Main board ───────────────────────────────────────────────── */}
       <div
-        className="flex-1 rounded-2xl overflow-hidden"
         style={{
-          background: 'linear-gradient(180deg, #8b5e3c 0%, #6b3e1e 100%)',
-          padding: '10px',
-          boxShadow: '0 8px 32px rgba(0,0,0,0.7), inset 0 1px 0 rgba(255,200,100,0.15)',
+          flex: 1,
+          borderRadius: 18,
+          overflow: 'hidden',
+          // Rich walnut wood frame
+          background: 'linear-gradient(145deg, #6e3e20 0%, #4e2610 35%, #3a1a08 65%, #5c3418 100%)',
+          padding: 12,
+          boxShadow: [
+            '0 14px 48px rgba(0,0,0,0.85)',
+            '0 4px 14px rgba(0,0,0,0.6)',
+            'inset 0 1px 0 rgba(255,210,120,0.22)',
+            'inset 0 -1px 0 rgba(0,0,0,0.55)',
+            'inset 2px 0 4px rgba(0,0,0,0.25)',
+            'inset -2px 0 4px rgba(0,0,0,0.25)',
+          ].join(', '),
         }}
       >
+        {/* Inner bevel — thin bright ring just inside the wood */}
         <div
-          className="h-full flex flex-col rounded-xl overflow-hidden"
-          style={{ background: '#1d6b35', minHeight: '480px' }}
+          style={{
+            height: '100%',
+            borderRadius: 10,
+            overflow: 'hidden',
+            boxShadow: 'inset 0 0 0 1px rgba(255,200,90,0.12), inset 0 0 0 2px rgba(0,0,0,0.4)',
+            minHeight: 480,
+            display: 'flex',
+            flexDirection: 'column',
+            // Deep green felt with subtle radial centre-lightening
+            background: 'radial-gradient(ellipse 90% 55% at 50% 50%, #15502a 0%, #0e3e1e 55%, #09301580 100%), linear-gradient(180deg, #0d3d20 0%, #0a3018 100%)',
+          }}
         >
-          {/* Top row (points 12-23) */}
-          <div className="relative flex h-[46%]" style={{ minHeight: '220px' }}>
+          {/* ── Top row (points 12–23) ──────────────────────────────── */}
+          <div
+            style={{
+              position: 'relative',
+              display: 'flex',
+              height: '46%',
+              minHeight: 220,
+            }}
+          >
             {renderRow(TOP_ROW, 'down')}
-            <div className="absolute left-1/2 -translate-x-1/2 h-full" style={{ width: '48px' }}>
+            <div style={{ position: 'absolute', left: '50%', transform: 'translateX(-50%)', height: '100%', width: 48 }}>
               <BarZone
                 gameState={gameState}
                 selectedPoint={selectedPoint}
@@ -253,19 +363,49 @@ export default function Board({ gameState, selectedPoint, onSelectPoint, onMoveT
             </div>
           </div>
 
-          {/* Center divider */}
-          <div className="flex items-center justify-center h-[8%]" style={{ background: '#155c2b' }}>
-            <div className="h-px flex-1" style={{ background: 'rgba(0,0,0,0.3)' }} />
-            <div className="px-4 text-green-200/50 text-xs font-mono tracking-widest">
-              {ghostBranches ? '⚛ QUANTUM ⚛' : '◆ BACKGAMMON ◆'}
+          {/* ── Centre rail ─────────────────────────────────────────── */}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              height: '8%',
+              background: 'linear-gradient(180deg, rgba(0,0,0,0.18) 0%, rgba(0,0,0,0.06) 50%, rgba(0,0,0,0.18) 100%)',
+              position: 'relative',
+            }}
+          >
+            {/* Full-width decorative line */}
+            <div style={{
+              position: 'absolute', inset: '0 0 0 0',
+              display: 'flex', alignItems: 'center', padding: '0 12px',
+              gap: 8,
+            }}>
+              <div style={{ flex: 1, height: 1, background: 'linear-gradient(90deg, transparent, rgba(200,155,60,0.3) 40%, rgba(200,155,60,0.3) 60%, transparent)' }} />
+              <div style={{
+                fontSize: 9,
+                letterSpacing: '0.22em',
+                fontFamily: 'Georgia, serif',
+                color: ghostBranches ? 'rgba(103,232,249,0.4)' : 'rgba(200,155,60,0.38)',
+                fontWeight: 600,
+                userSelect: 'none',
+                whiteSpace: 'nowrap',
+              }}>
+                {ghostBranches ? '⚛ QUANTUM ⚛' : '◆  BACKGAMMON  ◆'}
+              </div>
+              <div style={{ flex: 1, height: 1, background: 'linear-gradient(90deg, rgba(200,155,60,0.3) 0%, rgba(200,155,60,0.3) 60%, transparent)' }} />
             </div>
-            <div className="h-px flex-1" style={{ background: 'rgba(0,0,0,0.3)' }} />
           </div>
 
-          {/* Bottom row (points 11-0) */}
-          <div className="relative flex h-[46%]" style={{ minHeight: '220px' }}>
+          {/* ── Bottom row (points 11–0) ─────────────────────────────── */}
+          <div
+            style={{
+              position: 'relative',
+              display: 'flex',
+              height: '46%',
+              minHeight: 220,
+            }}
+          >
             {renderRow(BOTTOM_ROW, 'up')}
-            <div className="absolute left-1/2 -translate-x-1/2 h-full" style={{ width: '48px' }}>
+            <div style={{ position: 'absolute', left: '50%', transform: 'translateX(-50%)', height: '100%', width: 48 }}>
               <BarZone
                 gameState={gameState}
                 selectedPoint={selectedPoint}
@@ -276,7 +416,7 @@ export default function Board({ gameState, selectedPoint, onSelectPoint, onMoveT
         </div>
       </div>
 
-      {/* Bear off zone for WHITE */}
+      {/* ── Bear-off tray: WHITE (right) ──────────────────────────────── */}
       <BearOffZone
         player="white"
         count={gameState.off.white}

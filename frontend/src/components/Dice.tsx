@@ -1,33 +1,61 @@
 import type { DiceState } from '../store/gameStore'
 
+// Pip grid positions (% of die face, x then y)
 const PIP_LAYOUTS: Record<number, [number, number][]> = {
   1: [[50, 50]],
-  2: [[25, 25], [75, 75]],
-  3: [[25, 25], [50, 50], [75, 75]],
-  4: [[25, 25], [75, 25], [25, 75], [75, 75]],
-  5: [[25, 25], [75, 25], [50, 50], [25, 75], [75, 75]],
-  6: [[25, 20], [75, 20], [25, 50], [75, 50], [25, 80], [75, 80]],
+  2: [[28, 28], [72, 72]],
+  3: [[28, 28], [50, 50], [72, 72]],
+  4: [[28, 28], [72, 28], [28, 72], [72, 72]],
+  5: [[28, 28], [72, 28], [50, 50], [28, 72], [72, 72]],
+  6: [[28, 22], [72, 22], [28, 50], [72, 50], [28, 78], [72, 78]],
 }
 
 function DieFace({ value, used }: { value: number; used: boolean }) {
-  const pips = PIP_LAYOUTS[value] || []
+  const pips = PIP_LAYOUTS[value] ?? []
+
   return (
     <div
-      className={[
-        'relative w-14 h-14 rounded-xl border-2 transition-all duration-300',
-        used
-          ? 'bg-stone-600 border-stone-500 opacity-40'
-          : 'bg-amber-50 border-amber-300 shadow-[0_4px_12px_rgba(0,0,0,0.5)]',
-      ].join(' ')}
+      style={{
+        position: 'relative',
+        width: 52,
+        height: 52,
+        borderRadius: 11,
+        flexShrink: 0,
+        transition: 'all 0.28s ease',
+        // Active die: warm ivory  |  Used die: faded dark
+        background: used
+          ? 'linear-gradient(145deg, #2a1e14 0%, #1e1408 100%)'
+          : 'linear-gradient(145deg, #fdf6e0 0%, #f0d898 45%, #e0bc60 100%)',
+        border: used
+          ? '1.5px solid rgba(100,70,30,0.35)'
+          : '1.5px solid rgba(200,160,60,0.6)',
+        boxShadow: used
+          ? 'inset 0 1px 3px rgba(0,0,0,0.6)'
+          : [
+              '0 0 0 1px rgba(0,0,0,0.55)',
+              '0 5px 14px rgba(0,0,0,0.55)',
+              'inset 0 1px 0 rgba(255,255,240,0.85)',
+              'inset 0 -1px 0 rgba(160,100,0,0.4)',
+            ].join(', '),
+        opacity: used ? 0.38 : 1,
+      }}
     >
       {pips.map(([x, y], i) => (
         <div
           key={i}
-          className={[
-            'absolute w-2.5 h-2.5 rounded-full -translate-x-1/2 -translate-y-1/2',
-            used ? 'bg-stone-400' : 'bg-stone-800',
-          ].join(' ')}
-          style={{ left: `${x}%`, top: `${y}%` }}
+          style={{
+            position: 'absolute',
+            width: 8,
+            height: 8,
+            borderRadius: '50%',
+            transform: 'translate(-50%, -50%)',
+            left: `${x}%`,
+            top: `${y}%`,
+            background: used
+              ? 'rgba(180,130,60,0.4)'
+              : 'radial-gradient(circle at 35% 35%, #3a2808, #1a1004)',
+            boxShadow: used ? 'none' : 'inset 0 1px 2px rgba(0,0,0,0.5)',
+          }}
         />
       ))}
     </div>
@@ -43,19 +71,18 @@ interface DiceProps {
 
 export default function Dice({ dice, onRoll, canRoll, isRolling }: DiceProps) {
   const { values, remaining } = dice
-  const hasRolled = values.length > 0
-
-  const isDouble = values.length === 2 && values[0] === values[1]
-  const usedCount = hasRolled
-    ? (isDouble ? 4 : 2) - remaining.length
-    : 0
+  const hasRolled  = values.length > 0
+  const isDouble   = values.length === 2 && values[0] === values[1]
+  const usedCount  = hasRolled ? (isDouble ? 4 : 2) - remaining.length : 0
 
   return (
-    <div className="flex flex-col items-center gap-3">
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
+
+      {/* Rolled dice */}
       {hasRolled && (
-        <div className="flex gap-3 items-center">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           {values.map((v, i) => {
-            const used = isDouble ? i * 2 < usedCount * 2 && usedCount > i : i < usedCount
+            const used = isDouble ? i < usedCount / 2 : i < usedCount
             return (
               <div key={i} className={isRolling ? 'dice-rolling' : ''}>
                 <DieFace value={v} used={used} />
@@ -63,22 +90,44 @@ export default function Dice({ dice, onRoll, canRoll, isRolling }: DiceProps) {
             )
           })}
           {isDouble && remaining.length > 0 && (
-            <div className="text-amber-300 text-sm font-bold ml-1">
+            <div style={{
+              fontSize: 13,
+              fontWeight: 700,
+              color: '#f59e0b',
+              fontFamily: 'monospace',
+              marginLeft: 2,
+            }}>
               ×{remaining.length}
             </div>
           )}
         </div>
       )}
 
+      {/* Roll button */}
       {canRoll && (
         <button
           onClick={onRoll}
-          className="px-6 py-2.5 rounded-xl font-bold text-stone-900 tracking-wide
-            bg-gradient-to-b from-amber-300 to-amber-500
-            border border-amber-600
-            shadow-[0_4px_12px_rgba(0,0,0,0.4)]
-            hover:from-amber-200 hover:to-amber-400
-            active:scale-95 transition-all duration-150"
+          style={{
+            padding: '10px 28px',
+            borderRadius: 12,
+            fontWeight: 700,
+            fontSize: 14,
+            letterSpacing: '0.05em',
+            fontFamily: 'Georgia, serif',
+            cursor: 'pointer',
+            transition: 'all 0.14s ease',
+            // Matches the warm ivory dice
+            background: 'linear-gradient(180deg, #f5e098 0%, #d4a030 55%, #b87c18 100%)',
+            border: '1.5px solid rgba(140,90,10,0.8)',
+            color: '#3a1e04',
+            boxShadow: '0 4px 14px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,252,200,0.75)',
+          }}
+          onMouseEnter={e => {
+            (e.currentTarget as HTMLButtonElement).style.background = 'linear-gradient(180deg, #fdedb0 0%, #e0b040 55%, #c88c28 100%)'
+          }}
+          onMouseLeave={e => {
+            (e.currentTarget as HTMLButtonElement).style.background = 'linear-gradient(180deg, #f5e098 0%, #d4a030 55%, #b87c18 100%)'
+          }}
         >
           Roll Dice
         </button>
