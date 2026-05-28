@@ -1,9 +1,10 @@
-import type { GameState, MoveOption } from '../store/gameStore'
+import type { GameState, MoveOption, Player } from '../store/gameStore'
 import { getValidMoves } from './rules'
+import { applyMove } from './moves'
 
 export type BotLevel = 'beginner' | 'medium' | 'advanced'
 
-function pipCount(state: GameState, player: 'white' | 'black'): number {
+function pipCount(state: GameState, player: Player): number {
   let pips = 0
   for (let i = 0; i < 24; i++) {
     const pt = state.board[i]
@@ -37,32 +38,49 @@ function mediumScore(move: MoveOption, state: GameState): number {
   return score
 }
 
-function advancedScore(move: MoveOption, state: GameState): number {
-  const player = state.current_player
-  const opp = player === 'white' ? 'black' : 'white'
+// Evaluates the full board state for the given player (higher = better for that player)
+function scoreState(state: GameState, forPlayer: Player): number {
+  const opp = forPlayer === 'white' ? 'black' : 'white'
+  let score = 0
 
-  if (move.to_pos === 'off') return pipCount(state, opp) - pipCount(state, player) + 15
+  // Pip count advantage is the primary metric
+  score += pipCount(state, opp) - pipCount(state, forPlayer)
 
-  let score = pipCount(state, opp) - pipCount(state, player)
-  const destIdx = typeof move.to_pos === 'number' ? move.to_pos : -1
-  if (destIdx >= 0) {
-    const dest = state.board[destIdx]
-    if (dest.player === opp && dest.count === 1 && state.mode === 'short') score += 6
-    if (dest.player === player && dest.count >= 1) {
-      // Bonus for creating/extending primes
-      let run = 1
-      let k = destIdx + 1
-      while (k < 24 && state.board[k].player === player && state.board[k].count >= 2) { run++; k++ }
-      k = destIdx - 1
-      while (k >= 0 && state.board[k].player === player && state.board[k].count >= 2) { run++; k-- }
-      if (run >= 3) score += run * 3
+  // Bar penalties / bonuses
+  score -= state.bar[forPlayer] * 8
+  score += state.bar[opp] * 5
+
+  // Bearing off bonus
+  score += state.off[forPlayer] * 6
+
+  // Scan board for primes, blots, points
+  let primeLen = 0, maxPrime = 0
+  for (let i = 0; i < 24; i++) {
+    const pt = state.board[i]
+
+    // Count consecutive blocked points (prime)
+    if (pt.player === forPlayer && pt.count >= 2) {
+      primeLen++
+      if (primeLen > maxPrime) maxPrime = primeLen
+    } else {
+      primeLen = 0
     }
-    // Penalise blots left in dangerous zone
-    if (typeof move.from_pos === 'number' && state.board[move.from_pos].count === 1) {
-      const danger = player === 'white' ? destIdx > 17 : destIdx < 6
-      if (danger) score -= 5
+
+    // Exposed blots
+    if (pt.player === forPlayer && pt.count === 1) {
+      const inOppHome = forPlayer === 'white' ? i >= 18 : i <= 5
+      score -= inOppHome ? 6 : 2
+    }
+
+    // Points made in home board (very strong)
+    if (pt.player === forPlayer && pt.count >= 2) {
+      const inHome = forPlayer === 'white' ? i <= 5 : i >= 18
+      if (inHome) score += 2
     }
   }
+
+  score += maxPrime * 5
+
   return score
 }
 
@@ -72,8 +90,21 @@ export function botChooseMove(state: GameState, level: BotLevel): MoveOption | n
 
   if (level === 'beginner') return moves[Math.floor(Math.random() * moves.length)]
 
-  const scorer = level === 'medium' ? mediumScore : advancedScore
-  return moves.reduce((best, m) => scorer(m, state) > scorer(best, state) ? m : best, moves[0])
+  if (level === 'medium') {
+    return moves.reduce((best, m) =>
+      mediumScore(m, state) > mediumScore(best, state) ? m : best, moves[0])
+  }
+
+  // Advanced: score the resulting board state after each move
+  const forPlayer = state.current_player
+  let bestScore = -Infinity
+  let bestMove = moves[0]
+  for (const m of moves) {
+    const after = applyMove(state, m.from_pos, m.to_pos)
+    const s = scoreState(after, forPlayer)
+    if (s > bestScore) { bestScore = s; bestMove = m }
+  }
+  return bestMove
 }
 
 export function delay(ms: number): Promise<void> {

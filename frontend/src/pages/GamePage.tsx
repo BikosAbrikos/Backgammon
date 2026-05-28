@@ -12,6 +12,117 @@ import { applyMove, advanceTurn } from '../engine/moves'
 
 const WS_BASE = (import.meta.env.VITE_WS_URL ?? (import.meta.env.VITE_API_URL ?? '').replace('https://', 'wss://').replace('http://', 'ws://'))
 
+const AVATARS: Record<string, string> = {
+  default: '🎲', knight: '♞', crown: '👑', dice: '🎯',
+  dragon: '🐉', fox: '🦊', owl: '🦉', rocket: '🚀',
+}
+
+const BOT_LEVEL_LABEL: Record<string, string> = {
+  beginner: '🌱 Beginner', medium: '⚔️ Medium', advanced: '🔥 Advanced',
+}
+
+// ── Player panel ──────────────────────────────────────────────────────────────
+
+function PlayerCard({
+  name, elo, avatar, color, isActive, isYou,
+}: {
+  name: string; elo?: number; avatar?: string; color: 'white' | 'black'
+  isActive: boolean; isYou?: boolean
+}) {
+  return (
+    <div className={[
+      'flex items-center gap-2 px-4 py-2 rounded-xl border transition-all duration-300',
+      isActive
+        ? 'border-amber-500/60 bg-amber-900/20 shadow-[0_0_12px_rgba(245,158,11,0.15)]'
+        : 'border-stone-800/50 bg-stone-900/20 opacity-60',
+    ].join(' ')}>
+      <span className="text-2xl">{avatar ? AVATARS[avatar] ?? '🎲' : color === 'white' ? '⬜' : '⬛'}</span>
+      <div>
+        <div className="flex items-center gap-1.5">
+          <span className="text-sm font-bold text-amber-100">{name}</span>
+          {isYou && <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-900/50 text-amber-400 font-semibold">YOU</span>}
+        </div>
+        {elo !== undefined && (
+          <div className="text-xs text-amber-500 font-mono">{elo} Elo</div>
+        )}
+      </div>
+      {isActive && (
+        <div className="ml-1 w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+      )}
+    </div>
+  )
+}
+
+function PlayerPanel({
+  gameType, gameState, onlineCtx, botLevel, botColor, user,
+}: {
+  gameType: string
+  gameState: NonNullable<ReturnType<typeof useGameStore>['gameState']>
+  onlineCtx: ReturnType<typeof useGameStore>['onlineCtx']
+  botLevel: ReturnType<typeof useGameStore>['botLevel']
+  botColor: ReturnType<typeof useGameStore>['botColor']
+  user: ReturnType<typeof useAuthStore>['user']
+}) {
+  const current = gameState.current_player
+
+  if (gameType === 'online' && onlineCtx) {
+    const myColor = onlineCtx.myColor
+    const oppColor = myColor === 'white' ? 'black' : 'white'
+    const opp = onlineCtx.opponent
+
+    return (
+      <div className="flex items-center gap-3 justify-center flex-wrap">
+        <PlayerCard
+          name={user?.username ?? 'You'}
+          elo={user?.elo}
+          avatar={user?.avatar}
+          color={myColor}
+          isActive={current === myColor}
+          isYou
+        />
+        <span className="text-stone-600 font-bold text-lg">⚔️</span>
+        <PlayerCard
+          name={opp.username}
+          elo={opp.elo}
+          color={oppColor}
+          isActive={current === oppColor}
+        />
+      </div>
+    )
+  }
+
+  if (gameType === 'bot' && botLevel) {
+    const playerColor = botColor === 'black' ? 'white' : 'black'
+    return (
+      <div className="flex items-center gap-3 justify-center flex-wrap">
+        <PlayerCard
+          name={user?.username ?? 'You'}
+          elo={user?.elo}
+          avatar={user?.avatar}
+          color={playerColor}
+          isActive={current === playerColor}
+          isYou
+        />
+        <span className="text-stone-600 font-bold text-lg">⚔️</span>
+        <PlayerCard
+          name={`Bot — ${BOT_LEVEL_LABEL[botLevel]}`}
+          color={botColor ?? 'black'}
+          isActive={current === botColor}
+        />
+      </div>
+    )
+  }
+
+  // Local
+  return (
+    <div className="flex items-center gap-3 justify-center flex-wrap">
+      <PlayerCard name="White" color="white" isActive={current === 'white'} />
+      <span className="text-stone-600 font-bold text-lg">⚔️</span>
+      <PlayerCard name="Black" color="black" isActive={current === 'black'} />
+    </div>
+  )
+}
+
 // ── Winner overlay ────────────────────────────────────────────────────────────
 
 function WinnerOverlay({ winner, eloChange, myColor, onRestart }: {
@@ -98,7 +209,7 @@ function ChatPanel({ messages, onSend }: {
 export default function GamePage() {
   const { roomId } = useParams<{ roomId?: string }>()
   const navigate = useNavigate()
-  const { token } = useAuthStore()
+  const { token, user } = useAuthStore()
   const {
     gameState, gameType, selectedPoint, isRolling, isBotThinking,
     botLevel, botColor, onlineCtx, chatMessages, eloChange,
@@ -114,7 +225,7 @@ export default function GamePage() {
   // ── Online WS management ───────────────────────────────────────────────────
 
   useEffect(() => {
-    if (!roomId) return  // local or bot game
+    if (!roomId) return
     if (!token) { navigate('/auth'); return }
 
     let cancelled = false
@@ -179,10 +290,9 @@ export default function GamePage() {
     async function runBot() {
       let state = gameState!
 
-      await delay(700 + Math.random() * 400)
+      await delay(600 + Math.random() * 400)
       if (cancelled) return
 
-      // Roll
       const dice = localRollDice()
       state = { ...state, dice, phase: 'moving' }
       state.valid_moves = getValidMoves(state)
@@ -193,9 +303,8 @@ export default function GamePage() {
       }
       applyBotState(state)
 
-      // Play all moves
       while (!cancelled && state.phase === 'moving' && state.current_player === botColor && state.valid_moves.length) {
-        await delay(600 + Math.random() * 700)
+        await delay(500 + Math.random() * 600)
         if (cancelled) return
         const move = botChooseMove(state, botLevel!)
         if (!move) break
@@ -226,7 +335,7 @@ export default function GamePage() {
     addChat({ from: 'you', text, ts: Date.now() })
   }, [onlineCtx])
 
-  // ── Guard: redirect if no game ────────────────────────────────────────────
+  // ── Guard ─────────────────────────────────────────────────────────────────
 
   if (!gameState && !roomId) {
     navigate('/lobby')
@@ -235,9 +344,7 @@ export default function GamePage() {
 
   const isOnline = gameType === 'online' || !!roomId
   const canRoll = gameState?.phase === 'waiting_roll' && (
-    isOnline
-      ? gameState.current_player === onlineCtx?.myColor
-      : true
+    isOnline ? gameState.current_player === onlineCtx?.myColor : true
   )
   const isBotTurn = gameType === 'bot' && gameState?.current_player === botColor
   const hasBar = gameState ? gameState.bar[gameState.current_player] > 0 : false
@@ -252,13 +359,9 @@ export default function GamePage() {
 
   return (
     <div className="flex flex-col min-h-screen">
-      <TopBar
-        gameState={gameState!}
-        onRestart={handleRestart}
-        onSwitchMode={async () => handleRestart()}
-      />
+      <TopBar gameState={gameState!} onRestart={handleRestart} />
 
-      {/* WS connecting banner */}
+      {/* WS banners */}
       {isOnline && wsStatus === 'connecting' && (
         <div className="text-center py-2 bg-amber-900/30 text-amber-300 text-sm">
           Connecting to game server…
@@ -270,8 +373,21 @@ export default function GamePage() {
         </div>
       )}
 
-      <div className="flex-1 flex flex-col lg:flex-row items-center justify-center gap-6 p-6">
-        <div className="flex flex-col items-center gap-4 w-full max-w-4xl">
+      <div className="flex-1 flex flex-col lg:flex-row items-center justify-center gap-6 p-4 lg:p-6">
+        <div className="flex flex-col items-center gap-4 w-full">
+
+          {/* Player panel */}
+          {gameState && (
+            <PlayerPanel
+              gameType={gameType}
+              gameState={gameState}
+              onlineCtx={onlineCtx}
+              botLevel={botLevel}
+              botColor={botColor}
+              user={user}
+            />
+          )}
+
           {/* Status line */}
           <div className="text-sm text-stone-400 h-5">
             {isBotThinking && <span className="text-amber-400">Bot is thinking…</span>}
@@ -293,14 +409,17 @@ export default function GamePage() {
             )}
           </div>
 
-          {gameState && (
-            <Board
-              gameState={gameState}
-              selectedPoint={selectedPoint}
-              onSelectPoint={selectPoint}
-              onMoveToPoint={effectiveMove}
-            />
-          )}
+          {/* Board — scrollable on small screens */}
+          <div className="w-full overflow-x-auto pb-2">
+            {gameState && (
+              <Board
+                gameState={gameState}
+                selectedPoint={selectedPoint}
+                onSelectPoint={selectPoint}
+                onMoveToPoint={effectiveMove}
+              />
+            )}
+          </div>
 
           {gameState && (
             <Dice

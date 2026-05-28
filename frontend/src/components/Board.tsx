@@ -157,7 +157,7 @@ export default function Board({ gameState, selectedPoint, onSelectPoint, onMoveT
   }
 
   return (
-    <div className="flex gap-3 items-stretch">
+    <div className="flex gap-3 items-stretch" style={{ minWidth: '620px' }}>
       {/* Bear off zone for BLACK (left side — BLACK moves left→right, bears off at high end) */}
       <BearOffZone
         player="black"
