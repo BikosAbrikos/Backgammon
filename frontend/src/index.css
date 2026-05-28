@@ -74,3 +74,37 @@ body {
 .tray-glow {
   animation: trayGlow 1.4s ease-in-out infinite;
 }
+
+/* ── Loading screen entrance ─────────────────────────────────────── */
+@keyframes loadFadeIn {
+  from { opacity: 0; transform: scale(0.97); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+.load-screen-in {
+  animation: loadFadeIn 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* ── Dice float (loading screen) ─────────────────────────────────── */
+@keyframes diceFloat {
+  0%, 100% { transform: translateY(0px); }
+  50%       { transform: translateY(-7px); }
+}
+
+.dice-float {
+  animation: diceFloat 2.2s ease-in-out infinite;
+}
+
+/* ── Checker ping (loading screen) ───────────────────────────────── */
+@keyframes checkerPing {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(200,160,60,0); }
+  50%       { box-shadow: 0 0 0 8px rgba(200,160,60,0.18); }
+}
+
+.checker-ping-white {
+  animation: checkerPing 2s ease-in-out infinite;
+}
+
+.checker-ping-black {
+  animation: checkerPing 2s ease-in-out 1s infinite;
+}

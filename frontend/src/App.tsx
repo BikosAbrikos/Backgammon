@@ -1,6 +1,8 @@
+import { useState } from 'react'
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import NavBar from './components/NavBar'
 import ProtectedRoute from './components/ProtectedRoute'
+import LoadingScreen from './components/LoadingScreen'
 import LandingPage from './pages/LandingPage'
 import AuthPage from './pages/AuthPage'
 import LobbyPage from './pages/LobbyPage'
@@ -11,6 +13,12 @@ import FriendsPage from './pages/FriendsPage'
 import JoinPage from './pages/JoinPage'
 
 export default function App() {
+  const [serverReady, setServerReady] = useState(false)
+
+  if (!serverReady) {
+    return <LoadingScreen onReady={() => setServerReady(true)} />
+  }
+
   return (
     <BrowserRouter>
       <div className="min-h-screen flex flex-col" style={{ background: '#0a0602', color: '#e7e0d5' }}>
