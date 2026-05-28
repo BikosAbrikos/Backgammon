@@ -21,36 +21,78 @@ const AVATARS: Record<string, string> = {
 }
 
 const BOT_LEVEL_LABEL: Record<string, string> = {
-  beginner: '🌱 Beginner', medium: '⚔️ Medium', advanced: '🔥 Advanced',
+  beginner: 'Beginner', medium: 'Medium', advanced: 'Advanced',
+}
+
+// ── Pip count helper ──────────────────────────────────────────────────────────
+
+function calcPip(state: GameState, player: Player): number {
+  let count = state.bar[player] * 25
+  for (let i = 0; i < 24; i++) {
+    if (state.board[i].player === player) {
+      const dist = player === 'white' ? i + 1 : 24 - i
+      count += dist * state.board[i].count
+    }
+  }
+  return count
 }
 
 // ── Player panel ──────────────────────────────────────────────────────────────
 
 function PlayerCard({
-  name, elo, avatar, color, isActive, isYou,
+  name, elo, avatar, color, isActive, isYou, pip, winStreak,
 }: {
   name: string; elo?: number; avatar?: string; color: 'white' | 'black'
-  isActive: boolean; isYou?: boolean
+  isActive: boolean; isYou?: boolean; pip?: number; winStreak?: number
 }) {
   return (
     <div className={[
-      'flex items-center gap-2 px-4 py-2 rounded-xl border transition-all duration-300',
+      'flex items-center gap-3 px-4 py-3 rounded-xl border transition-all duration-300 min-w-[160px]',
       isActive
-        ? 'border-amber-500/60 bg-amber-900/20 shadow-[0_0_12px_rgba(245,158,11,0.15)]'
-        : 'border-stone-800/50 bg-stone-900/20 opacity-60',
+        ? 'border-amber-500/60 bg-amber-900/20 shadow-[0_0_16px_rgba(245,158,11,0.18)]'
+        : 'border-stone-800/50 bg-stone-900/20 opacity-55',
     ].join(' ')}>
-      <span className="text-2xl">{avatar ? AVATARS[avatar] ?? '🎲' : color === 'white' ? '⬜' : '⬛'}</span>
-      <div>
-        <div className="flex items-center gap-1.5">
-          <span className="text-sm font-bold text-amber-100">{name}</span>
-          {isYou && <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-900/50 text-amber-400 font-semibold">YOU</span>}
-        </div>
-        {elo !== undefined && (
-          <div className="text-xs text-amber-500 font-mono">{elo} Elo</div>
-        )}
+      {/* Avatar */}
+      <div className={[
+        'text-2xl w-10 h-10 flex items-center justify-center rounded-lg border shrink-0',
+        isActive ? 'border-amber-600/40 bg-amber-950/40' : 'border-stone-800/40 bg-stone-950/30',
+      ].join(' ')}>
+        {avatar ? AVATARS[avatar] ?? '🎲' : color === 'white' ? '⬜' : '⬛'}
       </div>
+
+      {/* Info */}
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <span className="text-sm font-bold text-amber-100 truncate max-w-[100px]">{name}</span>
+          {isYou && (
+            <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-900/60 text-amber-400 font-bold uppercase tracking-wide shrink-0">
+              YOU
+            </span>
+          )}
+          {winStreak !== undefined && winStreak >= 3 && (
+            <span className="text-[9px] px-1.5 py-0.5 rounded bg-orange-900/50 text-orange-400 font-bold shrink-0">
+              🔥{winStreak}
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-2 mt-0.5">
+          {elo !== undefined && (
+            <span className="text-[11px] text-amber-600 font-mono">{elo} ELO</span>
+          )}
+          {pip !== undefined && (
+            <span className={[
+              'text-[11px] font-mono font-semibold',
+              isActive ? 'text-stone-300' : 'text-stone-600',
+            ].join(' ')}>
+              {pip}pip
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* Active indicator */}
       {isActive && (
-        <div className="ml-1 w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+        <div className="w-2 h-2 rounded-full bg-amber-400 animate-pulse shrink-0" />
       )}
     </div>
   )
@@ -67,11 +109,15 @@ function PlayerPanel({
   user: AuthUser | null
 }) {
   const current = gameState.current_player
+  const whitePip = calcPip(gameState, 'white')
+  const blackPip = calcPip(gameState, 'black')
 
   if (gameType === 'online' && onlineCtx) {
     const myColor = onlineCtx.myColor
     const oppColor = myColor === 'white' ? 'black' : 'white'
     const opp = onlineCtx.opponent
+    const myPip  = myColor === 'white' ? whitePip : blackPip
+    const oppPip = oppColor === 'white' ? whitePip : blackPip
 
     return (
       <div className="flex items-center gap-3 justify-center flex-wrap">
@@ -82,13 +128,18 @@ function PlayerPanel({
           color={myColor}
           isActive={current === myColor}
           isYou
+          pip={myPip}
+          winStreak={user?.win_streak}
         />
-        <span className="text-stone-600 font-bold text-lg">⚔️</span>
+        <div className="flex flex-col items-center gap-1">
+          <span className="text-stone-600 font-bold text-sm">vs</span>
+        </div>
         <PlayerCard
           name={opp.username}
           elo={opp.elo}
           color={oppColor}
           isActive={current === oppColor}
+          pip={oppPip}
         />
       </div>
     )
@@ -105,23 +156,90 @@ function PlayerPanel({
           color={playerColor}
           isActive={current === playerColor}
           isYou
+          pip={playerColor === 'white' ? whitePip : blackPip}
+          winStreak={user?.win_streak}
         />
-        <span className="text-stone-600 font-bold text-lg">⚔️</span>
+        <div className="flex flex-col items-center gap-1">
+          <span className="text-stone-600 font-bold text-sm">vs</span>
+        </div>
         <PlayerCard
-          name={`Bot — ${BOT_LEVEL_LABEL[botLevel]}`}
+          name={`${BOT_LEVEL_LABEL[botLevel]} Bot`}
           color={botColor ?? 'black'}
           isActive={current === botColor}
+          pip={(botColor ?? 'black') === 'white' ? whitePip : blackPip}
         />
       </div>
     )
   }
 
-  // Local
+  // Local 2P
   return (
     <div className="flex items-center gap-3 justify-center flex-wrap">
-      <PlayerCard name="White" color="white" isActive={current === 'white'} />
-      <span className="text-stone-600 font-bold text-lg">⚔️</span>
-      <PlayerCard name="Black" color="black" isActive={current === 'black'} />
+      <PlayerCard name="White" color="white" isActive={current === 'white'} pip={whitePip} />
+      <span className="text-stone-600 font-bold text-sm">vs</span>
+      <PlayerCard name="Black" color="black" isActive={current === 'black'} pip={blackPip} />
+    </div>
+  )
+}
+
+// ── Turn status banner ────────────────────────────────────────────────────────
+
+function TurnBanner({
+  isMyTurn, opponentName, isBotThinking, quantumPhase, hasBar, selectedPoint, phase,
+}: {
+  isMyTurn: boolean
+  opponentName: string
+  isBotThinking: boolean
+  quantumPhase?: 'building' | 'opponent' | null
+  hasBar: boolean
+  selectedPoint: number | 'bar' | null
+  phase: string
+}) {
+  if (isBotThinking) return (
+    <div className="flex items-center gap-2 px-4 py-1.5 rounded-lg bg-stone-900/50 border border-stone-800/40 text-amber-400 text-sm">
+      <span className="animate-pulse">●</span> Bot is thinking…
+    </div>
+  )
+
+  if (quantumPhase === 'building') return (
+    <div className="px-4 py-1.5 rounded-lg bg-cyan-900/30 border border-cyan-600/30 text-cyan-300 text-sm font-semibold">
+      ⚛️ Make your moves — first half → Branch A, second half → Branch B
+    </div>
+  )
+  if (quantumPhase === 'opponent') return (
+    <div className="px-4 py-1.5 rounded-lg bg-purple-900/30 border border-purple-600/30 text-purple-300 text-sm">
+      ⚛️ Superposition active — ghost branches visible on board
+    </div>
+  )
+
+  if (hasBar && phase === 'moving') return (
+    <div className="px-4 py-1.5 rounded-lg bg-red-900/30 border border-red-700/40 text-red-300 text-sm font-semibold">
+      ⚠️ Must re-enter from the bar first
+    </div>
+  )
+
+  if (!isMyTurn) return (
+    <div className="flex items-center gap-2 px-4 py-1.5 rounded-lg bg-stone-900/40 border border-stone-800/40 text-stone-500 text-sm">
+      <span className="w-1.5 h-1.5 rounded-full bg-stone-600 animate-pulse inline-block" />
+      Waiting for {opponentName}…
+    </div>
+  )
+
+  if (phase === 'waiting_roll') return (
+    <div className="px-4 py-1.5 rounded-lg bg-amber-900/20 border border-amber-700/30 text-amber-300 text-sm font-semibold">
+      🎲 Your turn — roll the dice
+    </div>
+  )
+
+  if (selectedPoint !== null) return (
+    <div className="px-4 py-1.5 rounded-lg bg-green-900/20 border border-green-700/30 text-green-300 text-sm">
+      ✓ Select a highlighted point to move
+    </div>
+  )
+
+  return (
+    <div className="px-4 py-1.5 rounded-lg bg-amber-900/20 border border-amber-700/30 text-amber-300 text-sm">
+      Select a checker to move
     </div>
   )
 }
@@ -135,24 +253,27 @@ function WinnerOverlay({ winner, eloChange, myColor, onRestart }: {
   const isMe = myColor && myColor === winner
   const delta = myColor && eloChange ? eloChange[myColor] : null
   return (
-    <div className="fixed inset-0 flex items-center justify-center z-50 bg-black/75">
-      <div className="flex flex-col items-center gap-5 p-10 rounded-2xl border border-amber-600/50 text-center"
+    <div className="fixed inset-0 flex items-center justify-center z-50 bg-black/80">
+      <div className="flex flex-col items-center gap-5 p-10 rounded-2xl border border-amber-600/40 text-center shadow-2xl"
         style={{ background: 'linear-gradient(135deg,#1c0f04,#2a1508)' }}>
-        <div className="text-6xl">{winner === 'white' ? '⬜' : '⬛'}</div>
+        <div className="text-7xl">{isMe === true ? '🏆' : isMe === false ? '😔' : winner === 'white' ? '⬜' : '⬛'}</div>
         <div>
-          <h2 className="text-3xl font-bold text-amber-200 mb-1">
-            {isMe === true ? 'You Won!' : isMe === false ? 'You Lost' : `${winner === 'white' ? 'White' : 'Black'} Wins!`}
+          <h2 className="text-3xl font-bold text-amber-200 mb-2">
+            {isMe === true ? 'Victory!' : isMe === false ? 'Defeated' : `${winner === 'white' ? 'White' : 'Black'} Wins!`}
           </h2>
           {delta !== null && (
-            <p className={['text-lg font-semibold', delta >= 0 ? 'text-green-400' : 'text-red-400'].join(' ')}>
-              {delta >= 0 ? '+' : ''}{delta} Elo
+            <p className={['text-xl font-bold font-mono', delta >= 0 ? 'text-green-400' : 'text-red-400'].join(' ')}>
+              {delta >= 0 ? '+' : ''}{delta} ELO
             </p>
+          )}
+          {delta === null && eloChange && myColor && (
+            <p className="text-stone-500 text-sm mt-1">Calculating ELO…</p>
           )}
         </div>
         <button onClick={onRestart}
-          className="px-8 py-3 rounded-xl font-bold text-stone-900 text-lg
+          className="px-10 py-3 rounded-xl font-bold text-stone-900 text-lg
             bg-gradient-to-b from-amber-300 to-amber-500 border border-amber-600
-            hover:from-amber-200 hover:to-amber-400 active:scale-95 transition-all">
+            hover:from-amber-200 hover:to-amber-400 active:scale-95 transition-all shadow-lg">
           Back to Lobby
         </button>
       </div>
@@ -160,7 +281,7 @@ function WinnerOverlay({ winner, eloChange, myColor, onRestart }: {
   )
 }
 
-// ── Quantum collapse animation ─────────────────────────────────────────────────
+// ── Quantum collapse overlay ──────────────────────────────────────────────────
 
 function CollapseOverlay({ branch, onDone }: { branch: 'A' | 'B' | null; onDone: () => void }) {
   useEffect(() => {
@@ -198,17 +319,13 @@ function formatMove(m: { from_pos: number | 'bar'; to_pos: number | 'off'; die_v
   return `${from} → ${to}`
 }
 
-function QuantumMovesPanel({ ctx }: { ctx: import('../store/gameStore').QuantumCtx }) {
+function QuantumMovesPanel({ ctx }: { ctx: QuantumCtx }) {
   return (
     <div className="flex flex-col gap-4 w-52 bg-stone-950/80 border border-stone-800/60 rounded-xl p-4 text-xs shrink-0">
-
-      {/* Header */}
       <div className="text-center">
         <div className="text-base font-bold text-stone-200">⚛️ Superposition</div>
         <div className="text-stone-500 text-[10px] mt-0.5">Opponent sees both branches</div>
       </div>
-
-      {/* Branch A — first move */}
       <div className="flex flex-col gap-1.5">
         <div className="flex items-center gap-1.5 font-semibold text-cyan-400">
           <div className="w-3 h-3 rounded-full bg-cyan-400/70 border border-cyan-300 shrink-0" />
@@ -223,10 +340,7 @@ function QuantumMovesPanel({ ctx }: { ctx: import('../store/gameStore').QuantumC
           ))
         }
       </div>
-
       <div className="border-t border-stone-800" />
-
-      {/* Branch B — full turn */}
       <div className="flex flex-col gap-1.5">
         <div className="flex items-center gap-1.5 font-semibold text-orange-400">
           <div className="w-3 h-3 rounded-full bg-orange-400/70 border border-orange-300 shrink-0" />
@@ -241,26 +355,19 @@ function QuantumMovesPanel({ ctx }: { ctx: import('../store/gameStore').QuantumC
           ))
         }
       </div>
-
       <div className="border-t border-stone-800" />
-
-      {/* Legend */}
       <div className="flex flex-col gap-1.5 text-[10px] text-stone-500">
-        <div className="font-semibold text-stone-400 text-xs">What you see on the board:</div>
+        <div className="font-semibold text-stone-400 text-xs">Board legend:</div>
         <div className="flex items-center gap-1.5">
           <div className="w-4 h-4 rounded-full bg-amber-100 border-2 border-cyan-400 shrink-0 opacity-50" />
-          <span><span className="text-cyan-400 font-semibold">Cyan</span> ghost = Branch A position</span>
+          <span><span className="text-cyan-400 font-semibold">Cyan</span> ghost = Branch A</span>
         </div>
         <div className="flex items-center gap-1.5">
           <div className="w-4 h-4 rounded-full bg-amber-100 border-2 border-orange-400 shrink-0 opacity-50" />
-          <span><span className="text-orange-400 font-semibold">Orange</span> ghost = Branch B position</span>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <div className="w-4 h-4 rounded-full bg-amber-50 border-2 border-amber-300 shrink-0" />
-          <span><span className="text-stone-300 font-semibold">Solid</span> = same in both, guaranteed</span>
+          <span><span className="text-orange-400 font-semibold">Orange</span> ghost = Branch B</span>
         </div>
         <div className="mt-1 text-stone-600 leading-relaxed">
-          After your opponent moves, one branch collapses at random — 50 / 50.
+          50 / 50 collapse on opponent's next roll.
         </div>
       </div>
     </div>
@@ -270,19 +377,16 @@ function QuantumMovesPanel({ ctx }: { ctx: import('../store/gameStore').QuantumC
 // ── Spy Mode UI ───────────────────────────────────────────────────────────────
 
 function SpyTokenBar({ spyCtx, gameState }: { spyCtx: SpyCtx; gameState: GameState }) {
+  if (gameState.mode !== 'spy') return null
   const players: Player[] = ['white', 'black']
-  const isSpy = gameState.mode === 'spy'
-  if (!isSpy) return null
   return (
     <div className="flex items-center justify-center gap-6 px-4 py-1.5 rounded-lg border border-red-900/40 bg-red-950/20 text-xs">
       {players.map(p => (
         <div key={p} className="flex items-center gap-1.5">
           <span>{p === 'white' ? '⬜' : '⬛'}</span>
-          <span className="text-stone-400">{p === 'white' ? 'White' : 'Black'}:</span>
+          <span className="text-stone-500">{p === 'white' ? 'White' : 'Black'}:</span>
           {Array.from({ length: 3 }).map((_, i) => (
-            <span key={i} className={i < spyCtx.tokensRemaining[p] ? 'text-red-400' : 'text-stone-700'}>
-              🕵️
-            </span>
+            <span key={i} className={i < spyCtx.tokensRemaining[p] ? 'text-red-400' : 'text-stone-700'}>🕵️</span>
           ))}
           <span className={spyCtx.tokensRemaining[p] > 0 ? 'text-red-300 font-bold' : 'text-stone-600'}>
             ×{spyCtx.tokensRemaining[p]}
@@ -300,7 +404,7 @@ function ChallengeWindow({ spyCtx, currentPlayer, isBot, onChallenge, onClose }:
   onChallenge: () => void
   onClose: () => void
 }) {
-  const [remaining, setRemaining] = useState(5)
+  const [remaining, setRemaining] = useState(7)
   useEffect(() => {
     if (!spyCtx.challengeExpires) return
     const tick = setInterval(() => {
@@ -314,53 +418,43 @@ function ChallengeWindow({ spyCtx, currentPlayer, isBot, onChallenge, onClose }:
   const mover = spyCtx.lastMove?.mover
   const challenger = mover === 'white' ? 'black' : 'white'
   const isMover = currentPlayer === mover
-
-  // Bot games: challenger is the human (not bot color)
-  if (isBot && !isMover) return null  // bot challenges automatically, human only shown if they're the challenger
+  if (isBot && !isMover) return null
 
   return (
     <div className="fixed inset-0 z-30 flex items-end justify-center pb-24 pointer-events-none">
-      <div className="flex flex-col items-center gap-3 px-8 py-5 rounded-2xl border border-red-700/60 pointer-events-auto"
+      <div className="flex flex-col items-center gap-3 px-8 py-5 rounded-2xl border border-red-700/50 pointer-events-auto shadow-2xl"
         style={{ background: 'linear-gradient(135deg,#1a0505,#2d0a0a)' }}>
         <div className="text-sm text-stone-400">
           <span className={mover === 'white' ? 'text-amber-200 font-bold' : 'text-stone-300 font-bold'}>
             {mover === 'white' ? 'White' : 'Black'}
-          </span> just moved
-          {isMover
-            ? ' — waiting for opponent to challenge…'
-            : ` — do you want to challenge this move?`
-          }
+          </span>
+          {isMover ? ' just moved — waiting for opponent…' : ' just moved — do you want to challenge?'}
         </div>
-
-        {/* Countdown bar */}
         <div className="w-64 h-2 rounded-full bg-stone-800 overflow-hidden">
           <div
-            className="h-full rounded-full bg-red-500 transition-all"
-            style={{ width: `${(remaining / 5) * 100}%` }}
+            className="h-full rounded-full transition-all"
+            style={{
+              width: `${(remaining / 7) * 100}%`,
+              background: remaining > 3 ? '#ef4444' : remaining > 1 ? '#f97316' : '#dc2626',
+            }}
           />
         </div>
         <div className="text-xs text-stone-500">{remaining}s remaining</div>
-
         {!isMover && (
           <div className="flex gap-3">
-            <button
-              onClick={onChallenge}
+            <button onClick={onChallenge}
               className="px-6 py-2.5 rounded-xl font-bold text-white text-sm border border-red-500
                 bg-gradient-to-b from-red-600 to-red-800 hover:from-red-500 hover:to-red-700
-                active:scale-95 transition-all shadow-lg shadow-red-900/50"
-            >
-              ⚡ Challenge!
+                active:scale-95 transition-all shadow-lg shadow-red-900/50">
+              ⚡ Challenge
             </button>
-            <button
-              onClick={onClose}
+            <button onClick={onClose}
               className="px-4 py-2.5 rounded-xl font-semibold text-stone-400 text-sm border border-stone-700
-                bg-stone-900/50 hover:border-stone-500 hover:text-stone-200 transition-colors"
-            >
+                bg-stone-900/50 hover:border-stone-500 hover:text-stone-200 transition-colors">
               Skip
             </button>
           </div>
         )}
-
         {isMover && (
           <div className="text-xs text-red-400/60 italic">
             {challenger === 'white' ? 'White' : 'Black'} can challenge your move
@@ -376,7 +470,6 @@ function SpyResultToast({ result, onDone }: { result: 'caught' | 'missed'; onDon
     const t = setTimeout(onDone, 2500)
     return () => clearTimeout(t)
   }, [onDone])
-
   return (
     <div className="fixed top-20 left-1/2 -translate-x-1/2 z-50 pointer-events-none">
       <div className={[
@@ -385,9 +478,7 @@ function SpyResultToast({ result, onDone }: { result: 'caught' | 'missed'; onDon
           ? 'border-red-500/60 bg-red-950/90 text-red-300'
           : 'border-green-600/60 bg-green-950/90 text-green-300',
       ].join(' ')}>
-        {result === 'caught'
-          ? '🚨 Illegal move caught! Piece sent to bar.'
-          : '✅ Legal move — challenge failed!'}
+        {result === 'caught' ? '🚨 Illegal move caught — piece to bar!' : '✅ Legal move — challenge failed!'}
       </div>
     </div>
   )
@@ -395,7 +486,7 @@ function SpyResultToast({ result, onDone }: { result: 'caught' | 'missed'; onDon
 
 // ── Chat sidebar ──────────────────────────────────────────────────────────────
 
-const QUICK = ['gg', 'nice move!', 'brb', 'good luck']
+const QUICK = ['gg', 'nice!', 'brb', 'gl hf']
 
 function ChatPanel({ messages, onSend }: {
   messages: { from: string; text: string; ts: number }[]
@@ -411,18 +502,25 @@ function ChatPanel({ messages, onSend }: {
   }
 
   return (
-    <div className="flex flex-col w-56 bg-stone-900/60 rounded-xl border border-stone-800/50 overflow-hidden">
-      <div className="px-3 py-2 border-b border-stone-800/50 text-xs text-stone-500 font-semibold uppercase tracking-wider">Chat</div>
-      <div className="flex-1 overflow-y-auto p-2 flex flex-col gap-1 min-h-0" style={{ maxHeight: '300px' }}>
+    <div className="flex flex-col w-52 bg-stone-900/60 rounded-xl border border-stone-800/50 overflow-hidden">
+      <div className="px-3 py-2 border-b border-stone-800/50 text-[10px] text-stone-500 font-bold uppercase tracking-widest">
+        Chat
+      </div>
+      <div className="flex-1 overflow-y-auto p-2 flex flex-col gap-1 min-h-0" style={{ maxHeight: '220px' }}>
+        {messages.length === 0 && (
+          <div className="text-[10px] text-stone-700 italic text-center py-4">No messages yet</div>
+        )}
         {messages.map((m, i) => (
           <div key={i} className="text-xs">
-            <span className="text-amber-400 font-semibold">{m.from}: </span>
+            <span className={m.from === 'you' ? 'text-amber-400 font-semibold' : 'text-stone-500 font-semibold'}>
+              {m.from}:{' '}
+            </span>
             <span className="text-stone-300">{m.text}</span>
           </div>
         ))}
         <div ref={bottomRef} />
       </div>
-      <div className="flex gap-1 p-1 flex-wrap border-t border-stone-800/30">
+      <div className="flex gap-1 p-1.5 flex-wrap border-t border-stone-800/30">
         {QUICK.map(q => (
           <button key={q} onClick={() => send(q)}
             className="text-[10px] px-2 py-0.5 rounded bg-stone-800 text-stone-400 hover:text-stone-200 hover:bg-stone-700 transition-colors">
@@ -440,20 +538,58 @@ function ChatPanel({ messages, onSend }: {
   )
 }
 
-// ── Quantum status bar ────────────────────────────────────────────────────────
+// ── Side panel (online) ───────────────────────────────────────────────────────
 
-function QuantumStatusBar({ ctx }: { ctx: QuantumCtx }) {
-  const labels: Record<QuantumCtx['phase'], string> = {
-    building: '⚛️ Quantum — Move 1 = Branch A · Move 2 = Branch B',
-    opponent: '⚛️ Superposition active — ghost branches visible on board',
-  }
-  const colors: Record<QuantumCtx['phase'], string> = {
-    building: 'bg-cyan-900/40 border-cyan-500/40 text-cyan-300',
-    opponent: 'bg-purple-900/40 border-purple-500/40 text-purple-300',
-  }
+function SidePanel({
+  isOnline, messages, onSend, onResign, quantumCtx,
+}: {
+  isOnline: boolean
+  messages: { from: string; text: string; ts: number }[]
+  onSend: (text: string) => void
+  onResign: () => void
+  quantumCtx: QuantumCtx | null
+}) {
+  const [confirmResign, setConfirmResign] = useState(false)
+
   return (
-    <div className={['px-4 py-1.5 rounded-lg border text-xs font-semibold text-center', colors[ctx.phase]].join(' ')}>
-      {labels[ctx.phase]}
+    <div className="flex flex-col gap-3 shrink-0">
+      {isOnline && <ChatPanel messages={messages} onSend={onSend} />}
+
+      {quantumCtx?.phase === 'opponent' && <QuantumMovesPanel ctx={quantumCtx} />}
+
+      {isOnline && (
+        <div className="flex flex-col gap-2">
+          {!confirmResign ? (
+            <button
+              onClick={() => setConfirmResign(true)}
+              className="w-full px-4 py-2 rounded-lg text-xs font-semibold text-stone-500 border border-stone-800/60
+                bg-stone-900/40 hover:border-red-800/60 hover:text-red-400 transition-colors"
+            >
+              Resign
+            </button>
+          ) : (
+            <div className="flex flex-col gap-1.5 p-3 rounded-lg border border-red-800/50 bg-red-950/20">
+              <div className="text-xs text-red-300 text-center font-semibold">Resign this game?</div>
+              <div className="flex gap-2">
+                <button
+                  onClick={onResign}
+                  className="flex-1 py-1.5 rounded-lg text-xs font-bold text-white border border-red-600
+                    bg-gradient-to-b from-red-700 to-red-900 hover:from-red-600 hover:to-red-800 transition-colors"
+                >
+                  Yes
+                </button>
+                <button
+                  onClick={() => setConfirmResign(false)}
+                  className="flex-1 py-1.5 rounded-lg text-xs font-semibold text-stone-400 border border-stone-700
+                    bg-stone-900/50 hover:text-stone-200 transition-colors"
+                >
+                  No
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }
@@ -469,12 +605,13 @@ export default function GamePage() {
   const {
     gameState, gameType, selectedPoint, isRolling, isBotThinking,
     botLevel, botColor, onlineCtx, chatMessages, eloChange, quantumCtx, collapsedBranch,
-    spyCtx, spyResult,
+    spyCtx, spyResult, pendingFlush,
     rollDice, selectPoint, moveTo, clearSelection,
     setBotThinking, applyBotState, applyBotSpyMove, setOnlineGame, receiveOnlineState,
     setEloChange, addChat, reset, clearCollapsedBranch,
     challenge, closeChallengeWindow, clearSpyResult,
     setSpyCtxOnline, setQuantumCtxOnline, setCollapsedBranchOnline, setSpyResultOnline,
+    clearOnlinePending,
   } = useGameStore()
 
   const wsRef = useRef<WebSocket | null>(null)
@@ -482,15 +619,22 @@ export default function GamePage() {
   const [opponentLeft, setOpponentLeft] = useState(false)
   const [showCollapse, setShowCollapse] = useState(false)
 
-  // Reset store when the player leaves the page.
-  // WS is NOT closed here — the [roomId, token] effect owns WS lifecycle.
-  // Closing it here as well races with that cleanup and can cause double-close.
   useEffect(() => {
     return () => { reset() }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // ── Online WS management ───────────────────────────────────────────────────
+  // ── Flush batch moves when pendingFlush is set ────────────────────────────
+
+  useEffect(() => {
+    if (!pendingFlush || pendingFlush.length === 0) return
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: 'batch_moves', moves: pendingFlush }))
+    }
+    clearOnlinePending()
+  }, [pendingFlush])
+
+  // ── Online WS management ──────────────────────────────────────────────────
 
   useEffect(() => {
     if (!roomId) return
@@ -522,7 +666,6 @@ export default function GamePage() {
               opponent: msg.players?.[msg.your_color === 'white' ? 'black' : 'white'] ?? { username: 'Opponent', elo: 0 },
             })
           }
-          // Quantum: server signals the start of the building phase
           if (msg.quantum_phase === 'building') {
             setQuantumCtxOnline({
               phase: 'building',
@@ -534,7 +677,6 @@ export default function GamePage() {
               branchBMoves: [],
             })
           }
-          // Spy: sync token counts from server on regular game_state updates
           if (msg.state?.mode === 'spy' && msg.spy_tokens) {
             setSpyCtxOnline({
               tokensRemaining: msg.spy_tokens,
@@ -545,17 +687,15 @@ export default function GamePage() {
           }
 
         } else if (msg.type === 'spy_state') {
-          // A spy move was made — challenge window opens for the opponent
           receiveOnlineState(msg.state)
           setSpyCtxOnline({
             tokensRemaining: msg.spy_tokens,
             lastMove: { mover: msg.last_mover, dest: -1, wasIllegal: false },
             challengeWindowOpen: true,
-            challengeExpires: Date.now() + 5000,
+            challengeExpires: Date.now() + 7000,
           })
 
         } else if (msg.type === 'spy_result') {
-          // Challenge was resolved (caught / missed / timeout)
           receiveOnlineState(msg.state)
           setSpyCtxOnline({
             tokensRemaining: msg.spy_tokens,
@@ -568,7 +708,6 @@ export default function GamePage() {
           }
 
         } else if (msg.type === 'quantum_branches') {
-          // Branch A done — opponent plays on pre-quantum board; ghost overlays active
           receiveOnlineState(msg.state)
           setQuantumCtxOnline({
             phase: 'opponent',
@@ -581,7 +720,6 @@ export default function GamePage() {
           })
 
         } else if (msg.type === 'quantum_collapse') {
-          // Random branch selected — show collapse overlay
           receiveOnlineState(msg.state)
           setQuantumCtxOnline(null)
           setCollapsedBranchOnline(msg.branch)
@@ -592,7 +730,6 @@ export default function GamePage() {
           if (msg.elo_change) setEloChange(msg.elo_change)
 
         } else if (msg.type === 'chat') {
-          // Tag own messages as 'you' (server echoes back to sender too)
           addChat({ from: msg.from === user?.username ? 'you' : msg.from, text: msg.text, ts: Date.now() })
 
         } else if (msg.type === 'opponent_left') {
@@ -613,8 +750,6 @@ export default function GamePage() {
 
     connect()
 
-    // Keep the WS alive — proxies / load-balancers terminate idle connections
-    // after 30–60 s; send an application-level ping every 20 s.
     const pingId = setInterval(() => {
       if (wsRef.current?.readyState === WebSocket.OPEN) {
         wsRef.current.send(JSON.stringify({ type: 'ping' }))
@@ -629,14 +764,11 @@ export default function GamePage() {
   }, [roomId, token])
 
   // ── Bot automation ────────────────────────────────────────────────────────
-  // Fires on: current_player change (normal turns), phase change (spy continuation),
-  // and challengeWindowOpen change (spy: continue after window closes).
 
   useEffect(() => {
     if (gameType !== 'bot' || !botColor || !botLevel || !gameState) return
 
     const shouldStartTurn = gameState.phase === 'waiting_roll' && gameState.current_player === botColor
-    // Spy continuation: challenge window just closed, dice still remain
     const isSpyContinuation = gameState.mode === 'spy' && !spyCtx?.challengeWindowOpen &&
       gameState.phase === 'moving' && gameState.current_player === botColor && gameState.valid_moves.length > 0
 
@@ -651,7 +783,6 @@ export default function GamePage() {
       if (shouldStartTurn) {
         await delay(600 + Math.random() * 400)
         if (cancelled) return
-
         const dice = localRollDice()
         state = { ...state, dice, phase: 'moving' }
         state.valid_moves = getValidMoves(state)
@@ -663,7 +794,6 @@ export default function GamePage() {
         applyBotState(state)
       }
 
-      // Spy mode: attempt one illegal move at the start of the move sequence
       if (state.mode === 'spy') {
         const currentSpyCtx = useGameStore.getState().spyCtx
         if (currentSpyCtx && currentSpyCtx.tokensRemaining[botColor!] > 0) {
@@ -676,13 +806,12 @@ export default function GamePage() {
               const spyState = applySpyMove(state, move.from_pos, spyDest)
               applyBotSpyMove(spyState, botColor!, spyDest, true)
               setBotThinking(false)
-              return  // human challenge window will handle the rest
+              return
             }
           }
         }
       }
 
-      // Legal moves
       while (!cancelled && state.phase === 'moving' && state.current_player === botColor && state.valid_moves.length) {
         await delay(500 + Math.random() * 600)
         if (cancelled) return
@@ -698,10 +827,6 @@ export default function GamePage() {
     runBot()
     return () => { cancelled = true }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  // NOTE: gameState?.phase intentionally excluded — including it would cancel the bot's
-  // own async loop the moment it rolls dice (waiting_roll → moving triggers cleanup).
-  // Spy continuation is already covered by spyCtx?.challengeWindowOpen.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gameState?.current_player, spyCtx?.challengeWindowOpen, gameType, botColor])
 
   // ── Bot spy challenge automation ──────────────────────────────────────────
@@ -709,13 +834,10 @@ export default function GamePage() {
   useEffect(() => {
     if (gameType !== 'bot' || !spyCtx?.challengeWindowOpen || !botColor || !botLevel) return
     const mover = spyCtx.lastMove?.mover
-    if (mover === botColor) return  // bot made the move; human decides
+    if (mover === botColor) return
     const timer = setTimeout(() => {
-      if (botShouldChallenge(botLevel)) {
-        challenge()
-      } else {
-        closeChallengeWindow()
-      }
+      if (botShouldChallenge(botLevel)) challenge()
+      else closeChallengeWindow()
     }, 500 + Math.random() * 500)
     return () => clearTimeout(timer)
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -723,37 +845,32 @@ export default function GamePage() {
 
   // ── Quantum collapse visual feedback ──────────────────────────────────────
 
-  // For local/bot quantum: detect collapse via phase transition
-  // For online quantum: collapse is triggered directly in the WS handler above
   const prevPhaseRef = useRef<QuantumCtx['phase'] | null>(null)
   useEffect(() => {
     const onl = gameType === 'online' || !!roomId
-    if (onl) return  // online collapse is handled in WS handler
+    if (onl) return
     const prev = prevPhaseRef.current
     const cur = quantumCtx?.phase ?? null
-    if (prev === 'opponent' && cur === null) {
-      setShowCollapse(true)
-    }
+    if (prev === 'opponent' && cur === null) setShowCollapse(true)
     prevPhaseRef.current = cur
   }, [quantumCtx?.phase, gameType, roomId])
 
-  // ── Online roll / move / challenge proxies ────────────────────────────────
+  // ── Online proxies ────────────────────────────────────────────────────────
 
   const onlineRoll = useCallback(() => {
     wsRef.current?.send(JSON.stringify({ type: 'roll_dice' }))
   }, [])
 
+  // Used only for spy/quantum online (short/long use moveTo with local batch)
   const onlineMove = useCallback((to: number | 'off') => {
     wsRef.current?.send(JSON.stringify({ type: 'make_move', from_pos: selectedPoint, to_pos: to }))
     clearSelection()
   }, [selectedPoint])
 
   const sendChat = useCallback((text: string) => {
-    // Don't add locally — server echoes back to all players including sender
     wsRef.current?.send(JSON.stringify({ type: 'chat', text }))
   }, [])
 
-  // Spy challenge: online sends WS, local/bot uses store action
   const handleChallenge = useCallback(() => {
     if (gameType === 'online' || !!roomId) {
       wsRef.current?.send(JSON.stringify({ type: 'spy_challenge' }))
@@ -769,6 +886,10 @@ export default function GamePage() {
       closeChallengeWindow()
     }
   }, [gameType, roomId, closeChallengeWindow])
+
+  const handleResign = useCallback(() => {
+    wsRef.current?.send(JSON.stringify({ type: 'resign' }))
+  }, [])
 
   // ── Guard ─────────────────────────────────────────────────────────────────
 
@@ -799,7 +920,7 @@ export default function GamePage() {
                 </button>
               </div>
               <p className="text-stone-600 text-xs">
-                Or share the link: <span className="text-stone-500 select-all">{window.location.origin}/join/{inviteCode}</span>
+                Link: <span className="text-stone-500 select-all">{window.location.origin}/join/{inviteCode}</span>
               </p>
             </>
           )}
@@ -809,24 +930,23 @@ export default function GamePage() {
   }
 
   const isOnline = gameType === 'online' || !!roomId
-  const canRoll = gameState.phase === 'waiting_roll' && (
-    isOnline ? gameState.current_player === onlineCtx?.myColor : true
-  )
-  const isBotTurn = gameType === 'bot' && gameState.current_player === botColor
+  const myColor = onlineCtx?.myColor ?? null
+  const isMyTurn = isOnline
+    ? gameState.current_player === myColor
+    : true
+  const canRoll = gameState.phase === 'waiting_roll' && (isOnline ? isMyTurn : true)
   const hasBar = gameState.bar[gameState.current_player] > 0
 
+  // Board is flipped for black player in online games
+  const boardFlipped = isOnline && myColor === 'black'
+
+  // Spy/quantum online still use per-move WS; short/long use moveTo (batched locally)
+  const useDirectWs = isOnline && (gameState.mode === 'spy' || gameState.mode === 'quantum')
   const effectiveRoll = isOnline ? onlineRoll : rollDice
-  const effectiveMove = isOnline ? onlineMove : moveTo
+  const effectiveMove = useDirectWs ? onlineMove : moveTo
 
-
-  // Ghost branches to pass to Board during opponent's turn
-  const ghostBranches = quantumCtx?.phase === 'opponent' &&
-    quantumCtx.branchA && quantumCtx.branchB
-    ? {
-        branchA: quantumCtx.branchA,
-        branchB: quantumCtx.branchB,
-        quantumPlayer: quantumCtx.quantumPlayer,
-      }
+  const ghostBranches = quantumCtx?.phase === 'opponent' && quantumCtx.branchA && quantumCtx.branchB
+    ? { branchA: quantumCtx.branchA, branchB: quantumCtx.branchB, quantumPlayer: quantumCtx.quantumPlayer }
     : undefined
 
   function handleRestart() {
@@ -834,45 +954,34 @@ export default function GamePage() {
     navigate('/lobby')
   }
 
-  // Status line text
-  function statusText() {
-    if (!gameState || isBotThinking) return null
-    if (quantumCtx?.phase === 'building') return quantumCtx.branchA === null ? 'Make your first move — it becomes Branch A' : 'Now make your remaining moves — they become Branch B'
-    if (quantumCtx?.phase === 'opponent') return 'Superposition active — opponent sees ghost branches'
-    if (hasBar && gameState.phase === 'moving') return 'Must re-enter from bar first!'
-    if (gameState.phase === 'waiting_roll' && !isBotTurn) {
-      if (isOnline && onlineCtx) {
-        return gameState.current_player === onlineCtx.myColor
-          ? 'Your turn — roll the dice'
-          : `Waiting for ${onlineCtx.opponent.username}…`
-      }
-      return `${gameState.current_player === 'white' ? 'White' : 'Black'} — roll to move`
-    }
-    if (gameState.phase === 'moving' && !hasBar && selectedPoint === null) return 'Select a checker to move'
-    if (selectedPoint !== null) return 'Click a highlighted point to move'
-    return null
-  }
-
-  const status = statusText()
+  // Whether board interaction should be blocked (opponent's turn in online)
+  const boardBlocked = isOnline && !isMyTurn
 
   return (
     <div className="flex flex-col min-h-screen">
       <TopBar gameState={gameState} onRestart={handleRestart} />
 
-      {/* WS banners */}
+      {/* Connection banners */}
       {isOnline && wsStatus === 'connecting' && (
-        <div className="text-center py-2 bg-amber-900/30 text-amber-300 text-sm">
+        <div className="text-center py-1.5 bg-amber-900/30 text-amber-300 text-xs">
           Connecting to game server…
         </div>
       )}
+      {wsStatus === 'disconnected' && isOnline && (
+        <div className="text-center py-1.5 bg-red-900/30 text-red-300 text-xs">
+          Connection lost — reconnecting…
+        </div>
+      )}
       {opponentLeft && (
-        <div className="text-center py-2 bg-red-900/30 text-red-300 text-sm">
+        <div className="text-center py-1.5 bg-red-900/30 text-red-300 text-xs">
           Opponent disconnected — waiting 30s for reconnect
         </div>
       )}
 
-      <div className="flex-1 flex flex-col lg:flex-row items-center justify-center gap-6 p-4 lg:p-6">
-        <div className="flex flex-col items-center gap-4 w-full max-w-[860px]">
+      <div className="flex-1 flex flex-col lg:flex-row items-start justify-center gap-6 p-4 lg:p-6">
+
+        {/* ── Centre column ─────────────────────────────────────────────── */}
+        <div className="flex flex-col items-center gap-4 w-full max-w-[880px]">
 
           {/* Player panel */}
           <PlayerPanel
@@ -884,30 +993,22 @@ export default function GamePage() {
             user={user}
           />
 
-          {/* Quantum status bar */}
-          {quantumCtx && <QuantumStatusBar ctx={quantumCtx} />}
-
-          {/* Spy token bar */}
+          {/* Mode-specific status bars */}
           {spyCtx && <SpyTokenBar spyCtx={spyCtx} gameState={gameState} />}
 
-          {/* Status line */}
-          <div className="text-sm text-stone-400 h-5">
-            {isBotThinking && <span className="text-amber-400">Bot is thinking…</span>}
-            {!isBotThinking && status && (
-              <span className={[
-                quantumCtx?.phase === 'building' ? 'text-cyan-400' :
-                quantumCtx?.phase === 'opponent' ? 'text-purple-400' :
-                hasBar && gameState.phase === 'moving' ? 'text-red-400 font-semibold' :
-                selectedPoint !== null ? 'text-green-400' :
-                'text-amber-300',
-              ].join('')}>
-                {status}
-              </span>
-            )}
-          </div>
+          {/* Turn status banner */}
+          <TurnBanner
+            isMyTurn={isMyTurn || !isOnline}
+            opponentName={onlineCtx?.opponent.username ?? (botLevel ? 'Bot' : 'Opponent')}
+            isBotThinking={isBotThinking}
+            quantumPhase={quantumCtx?.phase}
+            hasBar={hasBar}
+            selectedPoint={selectedPoint}
+            phase={gameState.phase}
+          />
 
-          {/* Board — constrained width, scrollable on small screens */}
-          <div className="w-full overflow-x-auto pb-2">
+          {/* Board + overlay wrapper */}
+          <div className="w-full overflow-x-auto pb-2 relative">
             <Board
               gameState={gameState}
               selectedPoint={selectedPoint}
@@ -915,7 +1016,19 @@ export default function GamePage() {
               onMoveToPoint={effectiveMove}
               ghostBranches={ghostBranches}
               spyCtx={spyCtx}
+              flipped={boardFlipped}
             />
+
+            {/* Dim overlay when it's not your turn (online games) */}
+            {boardBlocked && (
+              <div
+                className="absolute inset-0 rounded-[18px] pointer-events-none"
+                style={{
+                  background: 'rgba(0,0,0,0.28)',
+                  backdropFilter: 'brightness(0.85)',
+                }}
+              />
+            )}
           </div>
 
           {/* Dice */}
@@ -927,19 +1040,19 @@ export default function GamePage() {
           />
         </div>
 
-        {/* Right-side panels */}
-        <div className="flex flex-col gap-4">
-          {/* Chat (online only) */}
-          {isOnline && (
-            <ChatPanel messages={chatMessages} onSend={sendChat} />
-          )}
-          {/* Quantum moves panel (shown during opponent's turn in superposition) */}
-          {quantumCtx?.phase === 'opponent' && (
-            <QuantumMovesPanel ctx={quantumCtx} />
-          )}
+        {/* ── Right column (online panels) ──────────────────────────────── */}
+        <div className="lg:mt-[96px]">
+          <SidePanel
+            isOnline={isOnline}
+            messages={chatMessages}
+            onSend={sendChat}
+            onResign={handleResign}
+            quantumCtx={quantumCtx}
+          />
         </div>
       </div>
 
+      {/* Overlays */}
       {gameState.phase === 'game_over' && gameState.winner && (
         <WinnerOverlay
           winner={gameState.winner}
@@ -960,11 +1073,8 @@ export default function GamePage() {
         <ChallengeWindow
           spyCtx={spyCtx}
           currentPlayer={
-            // For online: show based on who I am (my color)
             isOnline && onlineCtx ? onlineCtx.myColor
-            // For local 2P: always show the CHALLENGER's view (non-mover sees the button)
             : gameType === 'local' ? (spyCtx.lastMove.mover === 'white' ? 'black' : 'white')
-            // For bot: if bot made the move, human is challenger; otherwise mover is human
             : gameType === 'bot' && spyCtx.lastMove.mover === botColor
               ? (botColor === 'black' ? 'white' : 'black')
               : gameState.current_player

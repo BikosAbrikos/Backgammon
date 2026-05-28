@@ -14,24 +14,34 @@ interface BoardProps {
     quantumPlayer: Player
   }
   spyCtx?: SpyCtx | null
+  flipped?: boolean
 }
 
-// Visual layout:
-// Top row  (orientation=down): points 12..23 left-to-right
-// Bottom row (orientation=up): points 11..0  left-to-right
-const TOP_ROW    = [12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23]
-const BOTTOM_ROW = [11, 10,  9,  8,  7,  6,  5,  4,  3,  2,  1,  0]
+// Standard layout (white's perspective):
+//   Top row  (orientation=down): points 12..23 left-to-right
+//   Bottom row (orientation=up): points 11..0  left-to-right
+// Flipped layout (black's perspective, 180° rotation):
+//   Top row  (orientation=down): points 0..11  left-to-right
+//   Bottom row (orientation=up): points 23..12 left-to-right
+const TOP_ROW_NORMAL    = [12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23]
+const BOTTOM_ROW_NORMAL = [11, 10,  9,  8,  7,  6,  5,  4,  3,  2,  1,  0]
+const TOP_ROW_FLIPPED    = [ 0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11]
+const BOTTOM_ROW_FLIPPED = [23, 22, 21, 20, 19, 18, 17, 16, 15, 14, 13, 12]
 
 // ── Bar Zone ──────────────────────────────────────────────────────────────────
 
 function BarZone({
-  gameState, selectedPoint, onSelectBar,
+  gameState, selectedPoint, onSelectBar, flipped = false,
 }: {
   gameState: GameState
   selectedPoint: number | 'bar' | null
   onSelectBar: () => void
+  flipped?: boolean
 }) {
   const { bar, current_player } = gameState
+  // When flipped: white's checkers appear at top, black's at bottom (board rotated 180°)
+  const topPlayer:    'white' | 'black' = flipped ? 'white' : 'black'
+  const bottomPlayer: 'white' | 'black' = flipped ? 'black' : 'white'
 
   return (
     <div
@@ -43,12 +53,10 @@ function BarZone({
         gap: 6,
         width: 48,
         position: 'relative',
-        // Dark mahogany post
         background: 'linear-gradient(90deg, #1c0a04 0%, #2e1208 20%, #240e06 50%, #2e1208 80%, #1c0a04 100%)',
         boxShadow: 'inset 3px 0 6px rgba(0,0,0,0.6), inset -3px 0 6px rgba(0,0,0,0.6)',
       }}
     >
-      {/* Thin centre ornament line */}
       <div style={{
         position: 'absolute',
         top: 0, bottom: 0,
@@ -58,34 +66,34 @@ function BarZone({
         pointerEvents: 'none',
       }} />
 
-      {/* Black's bar checkers — top half */}
+      {/* Top-half bar checkers */}
       <div
-        style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, cursor: current_player === 'black' && bar.black > 0 ? 'pointer' : 'default' }}
-        onClick={current_player === 'black' && bar.black > 0 ? onSelectBar : undefined}
+        style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, cursor: current_player === topPlayer && bar[topPlayer] > 0 ? 'pointer' : 'default' }}
+        onClick={current_player === topPlayer && bar[topPlayer] > 0 ? onSelectBar : undefined}
       >
-        {Array.from({ length: bar.black }).map((_, i) => (
+        {Array.from({ length: bar[topPlayer] }).map((_, i) => (
           <Checker
             key={i}
-            player="black"
+            player={topPlayer}
             size="sm"
-            isSelected={i === bar.black - 1 && selectedPoint === 'bar' && current_player === 'black'}
+            isSelected={i === bar[topPlayer] - 1 && selectedPoint === 'bar' && current_player === topPlayer}
           />
         ))}
       </div>
 
       <div style={{ height: 8 }} />
 
-      {/* White's bar checkers — bottom half */}
+      {/* Bottom-half bar checkers */}
       <div
-        style={{ display: 'flex', flexDirection: 'column-reverse', alignItems: 'center', gap: 3, cursor: current_player === 'white' && bar.white > 0 ? 'pointer' : 'default' }}
-        onClick={current_player === 'white' && bar.white > 0 ? onSelectBar : undefined}
+        style={{ display: 'flex', flexDirection: 'column-reverse', alignItems: 'center', gap: 3, cursor: current_player === bottomPlayer && bar[bottomPlayer] > 0 ? 'pointer' : 'default' }}
+        onClick={current_player === bottomPlayer && bar[bottomPlayer] > 0 ? onSelectBar : undefined}
       >
-        {Array.from({ length: bar.white }).map((_, i) => (
+        {Array.from({ length: bar[bottomPlayer] }).map((_, i) => (
           <Checker
             key={i}
-            player="white"
+            player={bottomPlayer}
             size="sm"
-            isSelected={i === bar.white - 1 && selectedPoint === 'bar' && current_player === 'white'}
+            isSelected={i === bar[bottomPlayer] - 1 && selectedPoint === 'bar' && current_player === bottomPlayer}
           />
         ))}
       </div>
@@ -189,9 +197,11 @@ function BearOffZone({
 // ── Main Board ────────────────────────────────────────────────────────────────
 
 export default function Board({
-  gameState, selectedPoint, onSelectPoint, onMoveToPoint, ghostBranches, spyCtx,
+  gameState, selectedPoint, onSelectPoint, onMoveToPoint, ghostBranches, spyCtx, flipped = false,
 }: BoardProps) {
   const { board, current_player, valid_moves } = gameState
+  const TOP_ROW    = flipped ? TOP_ROW_FLIPPED    : TOP_ROW_NORMAL
+  const BOTTOM_ROW = flipped ? BOTTOM_ROW_FLIPPED : BOTTOM_ROW_NORMAL
 
   if (!board || board.length < 24) {
     return (
@@ -303,11 +313,11 @@ export default function Board({
   return (
     <div style={{ display: 'flex', gap: 10, alignItems: 'stretch', width: '100%', minWidth: 640 }}>
 
-      {/* ── Bear-off tray: BLACK (left) ───────────────────────────────── */}
+      {/* ── Bear-off tray: left side (black normal / white flipped) ─── */}
       <BearOffZone
-        player="black"
-        count={gameState.off.black}
-        isValidDest={canBearOffBlack}
+        player={flipped ? 'white' : 'black'}
+        count={flipped ? gameState.off.white : gameState.off.black}
+        isValidDest={flipped ? canBearOffWhite : canBearOffBlack}
         onMove={() => onMoveToPoint('off')}
       />
 
@@ -359,6 +369,7 @@ export default function Board({
                 gameState={gameState}
                 selectedPoint={selectedPoint}
                 onSelectBar={() => onSelectPoint('bar')}
+                flipped={flipped}
               />
             </div>
           </div>
@@ -410,17 +421,18 @@ export default function Board({
                 gameState={gameState}
                 selectedPoint={selectedPoint}
                 onSelectBar={() => onSelectPoint('bar')}
+                flipped={flipped}
               />
             </div>
           </div>
         </div>
       </div>
 
-      {/* ── Bear-off tray: WHITE (right) ──────────────────────────────── */}
+      {/* ── Bear-off tray: right side (white normal / black flipped) ── */}
       <BearOffZone
-        player="white"
-        count={gameState.off.white}
-        isValidDest={canBearOffWhite}
+        player={flipped ? 'black' : 'white'}
+        count={flipped ? gameState.off.black : gameState.off.white}
+        isValidDest={flipped ? canBearOffBlack : canBearOffWhite}
         onMove={() => onMoveToPoint('off')}
       />
     </div>

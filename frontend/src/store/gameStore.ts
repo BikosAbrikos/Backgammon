@@ -185,6 +185,11 @@ interface GameStore {
   setCollapsedBranchOnline: (b: 'A' | 'B' | null) => void
   setSpyResultOnline: (r: 'caught' | 'missed' | null) => void
 
+  // Batch online move queue (short/long only — spy/quantum still use per-move WS)
+  pendingOnlineMoves: Array<{ from_pos: number | 'bar'; to_pos: number | 'off' }>
+  pendingFlush: Array<{ from_pos: number | 'bar'; to_pos: number | 'off' }> | null
+  clearOnlinePending: () => void
+
   // Chat
   addChat: (msg: ChatMessage) => void
 
@@ -206,6 +211,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
   collapsedBranch: null,
   spyCtx: null,
   spyResult: null,
+  pendingOnlineMoves: [],
+  pendingFlush: null,
 
   startLocalGame: async (mode) => {
     const backendMode = (mode === 'quantum' || mode === 'spy') ? 'short' : mode
@@ -357,9 +364,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
   },
 
   moveTo: (to) => {
-    const { selectedPoint, gameState, gameType, botColor, quantumCtx, spyCtx } = get()
+    const { selectedPoint, gameState, gameType, botColor, quantumCtx, spyCtx, pendingOnlineMoves } = get()
     if (selectedPoint === null || !gameState) return
-    if (gameType === 'online') return
+    // Spy/quantum online: handled via individual WS messages in GamePage
+    if (gameType === 'online' && (gameState.mode === 'spy' || gameState.mode === 'quantum')) return
     if (gameType === 'bot' && botColor && gameState.current_player === botColor) return
     if (spyCtx?.challengeWindowOpen) return
 
@@ -391,6 +399,20 @@ export const useGameStore = create<GameStore>((set, get) => ({
     }
 
     const next = applyMove(gameState, selectedPoint, to)
+
+    // ── Online short/long: apply locally and batch-send when turn ends ─────────
+    if (gameType === 'online') {
+      const queued = { from_pos: selectedPoint as number | 'bar', to_pos: to }
+      const newPending = [...pendingOnlineMoves, queued]
+      const done = next.phase === 'waiting_roll' || next.phase === 'game_over'
+      set({
+        gameState: next,
+        selectedPoint: null,
+        pendingOnlineMoves: done ? [] : newPending,
+        pendingFlush: done ? newPending : null,
+      })
+      return
+    }
 
     // ── Quantum branch handling ────────────────────────────────────────────────
     // 2 dice  → Branch A = move 1,      Branch B = move 2
@@ -564,6 +586,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
   setCollapsedBranchOnline: (b) => set({ collapsedBranch: b }),
   setSpyResultOnline: (r) => set({ spyResult: r }),
 
+  clearOnlinePending: () => set({ pendingOnlineMoves: [], pendingFlush: null }),
+
   addChat: (msg) => set(s => ({ chatMessages: [...s.chatMessages.slice(-99), msg] })),
 
   reset: () => set({
@@ -572,5 +596,6 @@ export const useGameStore = create<GameStore>((set, get) => ({
     onlineCtx: null, chatMessages: [], eloChange: null,
     quantumCtx: null, collapsedBranch: null,
     spyCtx: null, spyResult: null,
+    pendingOnlineMoves: [], pendingFlush: null,
   }),
 }))

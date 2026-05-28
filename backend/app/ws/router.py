@@ -421,6 +421,55 @@ async def game_ws(websocket: WebSocket, room_id: str):
                         "players": room.players_info(),
                     })
 
+            # ── Batch Moves (short/long) ──────────────────────────────
+            elif msg == "batch_moves":
+                if state.phase != Phase.MOVING or state.current_player.value != color:
+                    continue
+                moves_list = data.get("moves", [])
+                error_sent = False
+                for mv in moves_list:
+                    from_pos = mv.get("from_pos")
+                    to_pos   = mv.get("to_pos")
+                    valid    = get_valid_moves(state)
+                    ok = any(str(m.from_pos) == str(from_pos) and str(m.to_pos) == str(to_pos) for m in valid)
+                    if not ok:
+                        await websocket.send_text(json.dumps({"type": "error", "message": f"Illegal move in batch: {from_pos}->{to_pos}"}))
+                        error_sent = True
+                        break
+                    state = apply_move(state, from_pos, to_pos)
+                    if state.phase == Phase.GAME_OVER:
+                        break
+                if error_sent:
+                    continue
+                room.state = state
+                if state.phase == Phase.GAME_OVER:
+                    winner_color = state.winner.value if state.winner else None
+                    elo_changes: dict = {}
+                    if room.game_type == "ranked" and winner_color:
+                        wc = room.players.get("white")
+                        bc = room.players.get("black")
+                        if wc and bc:
+                            if winner_color == "white":
+                                d = _elo_delta(wc.elo, bc.elo, 0)
+                                elo_changes = {"white": d, "black": -d}
+                            else:
+                                d = _elo_delta(bc.elo, wc.elo, 0)
+                                elo_changes = {"white": -d, "black": d}
+                            asyncio.create_task(_save_ranked_result(room, winner_color, elo_changes))
+                    await room.broadcast({
+                        "type": "game_over",
+                        "state": state.model_dump(),
+                        "players": room.players_info(),
+                        "winner": winner_color,
+                        "elo_change": elo_changes,
+                    })
+                else:
+                    await room.broadcast({
+                        "type": "game_state",
+                        "state": state.model_dump(),
+                        "players": room.players_info(),
+                    })
+
             # ── Spy Challenge ─────────────────────────────────────────────
             elif msg == "spy_challenge":
                 if not room.spy_window_open:
