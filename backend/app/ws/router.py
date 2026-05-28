@@ -283,50 +283,98 @@ async def game_ws(websocket: WebSocket, room_id: str):
                 state = apply_move(state, from_pos, to_pos)
 
                 # Quantum building phase:
-                # Branch A = state after FIRST die used (captured automatically)
-                # Branch B = state after ALL dice used (player's full turn)
+                # 2 dice  → Branch A = move 1,     Branch B = move 2
+                # 4 dice  → Branch A = moves 1-2,  Branch B = moves 3-4
+                # During the first half, quantum_branch_b_moves stores all moves
+                # as a running list; once Branch A is captured it resets to []
+                # so it only accumulates second-half moves going forward.
                 if room.quantum_phase == "building":
-                    this_move = {"from_pos": from_pos, "to_pos": to_pos, "die_value": 0}
+                    initial_dice = len(room.quantum_pre_state.dice.remaining)
+                    half_point   = max(1, initial_dice // 2)
+                    this_move    = {"from_pos": from_pos, "to_pos": to_pos, "die_value": 0}
 
                     if room.quantum_branch_a is None:
-                        # First move just made — capture Branch A
-                        room.quantum_branch_a = extract_board_positions(state)
-                        room.quantum_branch_a_moves = [this_move]
-                        room.quantum_branch_b_moves = [this_move]  # B starts same as A
-                    else:
-                        # Subsequent moves — accumulate into Branch B
+                        # First half: accumulate moves in quantum_branch_b_moves (temp)
                         room.quantum_branch_b_moves.append(this_move)
+                        half_reached = len(room.quantum_branch_b_moves) >= half_point
 
-                    if state.phase == Phase.WAITING_ROLL:
-                        # All dice used — Branch B = final state; quantum complete
-                        room.quantum_branch_b = extract_board_positions(state)
-                        room.quantum_phase = "opponent"
+                        if half_reached or state.phase == Phase.WAITING_ROLL:
+                            # Capture Branch A
+                            room.quantum_branch_a = extract_board_positions(state)
+                            room.quantum_branch_a_moves = list(room.quantum_branch_b_moves)
 
-                        opp_state = copy.deepcopy(room.quantum_pre_state)
-                        opp_state = _advance_turn(opp_state)
-                        opp_state.mode = state.mode
-                        room.state = opp_state
+                            if state.phase == Phase.WAITING_ROLL:
+                                # Turn ended early — both branches identical
+                                room.quantum_branch_b = room.quantum_branch_a
+                                room.quantum_branch_b_moves = []
+                                room.quantum_phase = "opponent"
+                                opp_state = copy.deepcopy(room.quantum_pre_state)
+                                opp_state = _advance_turn(opp_state)
+                                opp_state.mode = state.mode
+                                room.state = opp_state
+                                await room.broadcast({
+                                    "type": "quantum_branches",
+                                    "state": opp_state.model_dump(),
+                                    "players": room.players_info(),
+                                    "quantum_player": room.quantum_player,
+                                    "branch_a": room.quantum_branch_a,
+                                    "branch_b": room.quantum_branch_b,
+                                    "branch_a_moves": room.quantum_branch_a_moves,
+                                    "branch_b_moves": [],
+                                })
+                                continue
 
+                            # Branch A captured, switch to second-half tracking
+                            room.quantum_branch_b_moves = []  # reset: only second-half from here
+                            room.state = state
+                            await room.broadcast({
+                                "type": "game_state",
+                                "state": state.model_dump(),
+                                "players": room.players_info(),
+                            })
+                            continue
+
+                        # Still in first half, need more moves
+                        room.state = state
                         await room.broadcast({
-                            "type": "quantum_branches",
-                            "state": opp_state.model_dump(),
+                            "type": "game_state",
+                            "state": state.model_dump(),
                             "players": room.players_info(),
-                            "quantum_player": room.quantum_player,
-                            "branch_a": room.quantum_branch_a,
-                            "branch_b": room.quantum_branch_b,
-                            "branch_a_moves": room.quantum_branch_a_moves,
-                            "branch_b_moves": room.quantum_branch_b_moves,
                         })
                         continue
 
-                    # Branch B not yet complete — broadcast intermediate state
-                    room.state = state
-                    await room.broadcast({
-                        "type": "game_state",
-                        "state": state.model_dump(),
-                        "players": room.players_info(),
-                    })
-                    continue
+                    else:
+                        # Second half: accumulate second-half moves only
+                        room.quantum_branch_b_moves.append(this_move)
+
+                        if state.phase == Phase.WAITING_ROLL:
+                            # All dice used — Branch B complete
+                            room.quantum_branch_b = extract_board_positions(state)
+                            room.quantum_phase = "opponent"
+                            opp_state = copy.deepcopy(room.quantum_pre_state)
+                            opp_state = _advance_turn(opp_state)
+                            opp_state.mode = state.mode
+                            room.state = opp_state
+                            await room.broadcast({
+                                "type": "quantum_branches",
+                                "state": opp_state.model_dump(),
+                                "players": room.players_info(),
+                                "quantum_player": room.quantum_player,
+                                "branch_a": room.quantum_branch_a,
+                                "branch_b": room.quantum_branch_b,
+                                "branch_a_moves": room.quantum_branch_a_moves,
+                                "branch_b_moves": room.quantum_branch_b_moves,
+                            })
+                            continue
+
+                        # Still making second-half moves
+                        room.state = state
+                        await room.broadcast({
+                            "type": "game_state",
+                            "state": state.model_dump(),
+                            "players": room.players_info(),
+                        })
+                        continue
 
                 room.state = state
 

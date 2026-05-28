@@ -393,52 +393,68 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const next = applyMove(gameState, selectedPoint, to)
 
     // ── Quantum branch handling ────────────────────────────────────────────────
-    // Branch A = state after FIRST die used (auto-captured)
-    // Branch B = state after ALL remaining dice used (player's full turn)
+    // 2 dice  → Branch A = move 1,      Branch B = move 2
+    // 4 dice  → Branch A = moves 1-2,   Branch B = moves 3-4
+    // Rule: capture Branch A when floor(totalDice / 2) moves have been made.
+    // During the first half, branchBMoves is used as a running accumulator;
+    // when Branch A is captured it is reset so it only holds second-half moves.
     if (quantumCtx?.phase === 'building') {
       const moveRecord: MoveOption = gameState.valid_moves.find(
         m => String(m.from_pos) === String(selectedPoint) && String(m.to_pos) === String(to)
       ) ?? { from_pos: selectedPoint, to_pos: to, die_value: 0 }
 
-      const isFirstMove = quantumCtx.branchA === null
+      const initialDice = quantumCtx.preQuantumState.dice.remaining.length
+      const halfPoint  = Math.max(1, Math.floor(initialDice / 2))
 
-      if (isFirstMove) {
-        // First die consumed — capture Branch A
-        const capturedBranchA = extractBranchPositions(next)
+      if (quantumCtx.branchA === null) {
+        // ── First half: accumulate moves in branchBMoves (temp storage) ──────
+        const firstHalfMoves = [...quantumCtx.branchBMoves, moveRecord]
+        const halfReached = firstHalfMoves.length >= halfPoint
 
-        if (next.phase === 'waiting_roll') {
-          // Only 1 die total — both branches are the same single move
-          const opponentTurn = advanceTurn(quantumCtx.preQuantumState)
+        if (halfReached || next.phase === 'waiting_roll') {
+          // Capture Branch A at the halfway point (or early end of turn)
+          const capturedBranchA = extractBranchPositions(next)
+
+          if (next.phase === 'waiting_roll') {
+            // Turn ended before second half (forced skip / only had half the dice)
+            // Both branches are the same
+            const opponentTurn = advanceTurn(quantumCtx.preQuantumState)
+            set({
+              gameState: opponentTurn,
+              selectedPoint: null,
+              quantumCtx: {
+                ...quantumCtx, phase: 'opponent',
+                branchA: capturedBranchA, branchB: capturedBranchA,
+                branchAMoves: firstHalfMoves, branchBMoves: [],
+              },
+            })
+            return
+          }
+
+          // Branch A captured — switch to second-half tracking
           set({
-            gameState: opponentTurn,
+            gameState: next,
             selectedPoint: null,
             quantumCtx: {
-              ...quantumCtx, phase: 'opponent',
-              branchA: capturedBranchA, branchB: capturedBranchA,
-              branchAMoves: [moveRecord], branchBMoves: [moveRecord],
+              ...quantumCtx,
+              branchA: capturedBranchA,
+              branchAMoves: firstHalfMoves,  // e.g. [m1] for 2-dice, [m1,m2] for 4-dice
+              branchBMoves: [],              // reset: only second-half moves go here
             },
           })
           return
         }
-        // More dice left — continue to Branch B moves
-        set({
-          gameState: next,
-          selectedPoint: null,
-          quantumCtx: {
-            ...quantumCtx,
-            branchA: capturedBranchA,
-            branchAMoves: [moveRecord],
-            branchBMoves: [moveRecord],  // B starts as the same first move
-          },
-        })
+
+        // Still in first half, need more moves
+        set({ gameState: next, selectedPoint: null, quantumCtx: { ...quantumCtx, branchBMoves: firstHalfMoves } })
         return
       }
 
-      // Building Branch B (subsequent dice after Branch A captured)
-      const updatedBMoves = [...quantumCtx.branchBMoves, moveRecord]
+      // ── Second half: branchBMoves now tracks only second-half moves ─────────
+      const secondHalfMoves = [...quantumCtx.branchBMoves, moveRecord]
 
       if (next.phase === 'waiting_roll') {
-        // All dice used — Branch B = final full-turn position
+        // All dice used — Branch B = final cumulative position
         const capturedBranchB = extractBranchPositions(next)
         const opponentTurn = advanceTurn(quantumCtx.preQuantumState)
         set({
@@ -446,14 +462,14 @@ export const useGameStore = create<GameStore>((set, get) => ({
           selectedPoint: null,
           quantumCtx: {
             ...quantumCtx, phase: 'opponent',
-            branchB: capturedBranchB, branchBMoves: updatedBMoves,
+            branchB: capturedBranchB, branchBMoves: secondHalfMoves,
           },
         })
         return
       }
 
-      // Mid Branch-B moves — update board and move list
-      set({ gameState: next, selectedPoint: null, quantumCtx: { ...quantumCtx, branchBMoves: updatedBMoves } })
+      // Still making second-half moves
+      set({ gameState: next, selectedPoint: null, quantumCtx: { ...quantumCtx, branchBMoves: secondHalfMoves } })
       return
     }
 
