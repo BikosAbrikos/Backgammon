@@ -1,4 +1,4 @@
-import type { GameState, MoveOption, Player, SpyCtx } from '../store/gameStore'
+import type { GameState, MoveOption, Player } from '../store/gameStore'
 import { getValidMoves } from './rules'
 import { applyMove } from './moves'
 
@@ -107,14 +107,14 @@ export function botChooseMove(state: GameState, level: BotLevel): MoveOption | n
   return bestMove
 }
 
-// Returns true if the bot should challenge the last move in spy mode
-export function botShouldChallenge(spyCtx: SpyCtx, level: BotLevel): boolean {
-  if (!spyCtx.lastMove) return false
-  const { wasIllegal } = spyCtx.lastMove
+// Returns true if the bot should challenge the last move in spy mode.
+// The bot does NOT know whether the move was legal — it guesses randomly,
+// with higher difficulty meaning a slightly better intuition (but never perfect).
+export function botShouldChallenge(level: BotLevel): boolean {
   const rand = Math.random()
-  if (level === 'beginner') return wasIllegal ? rand < 0.40 : false
-  if (level === 'medium')   return wasIllegal ? rand < 0.70 : rand < 0.05
-  /* advanced */             return wasIllegal ? rand < 0.90 : false
+  if (level === 'beginner') return rand < 0.25   // Challenges ~1 in 4 moves (mostly random)
+  if (level === 'medium')   return rand < 0.42   // Slightly better nose for bluffs
+  /* advanced */             return rand < 0.58   // Better, but still makes mistakes
 }
 
 // Returns an illegal destination point for the bot to play a spy move to, or null if not cheating

@@ -2,7 +2,7 @@ import { create } from 'zustand'
 import axios from 'axios'
 import { rollDice as localRollDice } from '../engine/dice'
 import { getValidMoves } from '../engine/rules'
-import { applyMove, applySpyMove, advanceTurn } from '../engine/moves'
+import { applyMove, applySpyMove, advanceTurn, extractBranchPositions } from '../engine/moves'
 import type { BotLevel } from '../engine/bot'
 
 const API_BASE = import.meta.env.VITE_API_URL ?? ''
@@ -129,28 +129,6 @@ function collapseQuantumState(
   const next = { ...currentState, board: newBoard, bar: newBar, off: newOff }
   next.valid_moves = getValidMoves(next)
   return next
-}
-
-function extractBranchPositions(state: GameState): QuantumBranchPositions {
-  return {
-    board: state.board.map(pt => ({ ...pt })),
-    bar: { ...state.bar },
-    off: { ...state.off },
-  }
-}
-
-// Generates a random-but-valid complete move sequence from the given state.
-// Used to auto-create Branch B after the player finishes Branch A.
-function generateRandomBranch(startState: GameState): { positions: QuantumBranchPositions; moves: MoveOption[] } {
-  let s: GameState = JSON.parse(JSON.stringify(startState))
-  const moves: MoveOption[] = []
-  let safety = 0
-  while (s.phase === 'moving' && s.valid_moves.length > 0 && safety++ < 20) {
-    const move = s.valid_moves[Math.floor(Math.random() * s.valid_moves.length)]
-    moves.push(move)
-    s = applyMove(s, move.from_pos, move.to_pos)
-  }
-  return { positions: extractBranchPositions(s), moves }
 }
 
 // ── Store ──────────────────────────────────────────────────────────────────────
@@ -415,28 +393,67 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const next = applyMove(gameState, selectedPoint, to)
 
     // ── Quantum branch handling ────────────────────────────────────────────────
+    // Branch A = state after FIRST die used (auto-captured)
+    // Branch B = state after ALL remaining dice used (player's full turn)
     if (quantumCtx?.phase === 'building') {
-      // Record the move that was just made
-      const moveRecord = gameState.valid_moves.find(
+      const moveRecord: MoveOption = gameState.valid_moves.find(
         m => String(m.from_pos) === String(selectedPoint) && String(m.to_pos) === String(to)
       ) ?? { from_pos: selectedPoint, to_pos: to, die_value: 0 }
-      const updatedAMoves = [...quantumCtx.branchAMoves, moveRecord]
 
-      if (next.phase === 'waiting_roll') {
-        // Branch A complete — auto-generate Branch B, hand off to opponent
-        const branchA = extractBranchPositions(next)
-        const { positions: branchB, moves: branchBMoves } = generateRandomBranch(quantumCtx.preQuantumState)
-        const opponentTurn = advanceTurn(quantumCtx.preQuantumState)
+      const isFirstMove = quantumCtx.branchA === null
+
+      if (isFirstMove) {
+        // First die consumed — capture Branch A
+        const capturedBranchA = extractBranchPositions(next)
+
+        if (next.phase === 'waiting_roll') {
+          // Only 1 die total — both branches are the same single move
+          const opponentTurn = advanceTurn(quantumCtx.preQuantumState)
+          set({
+            gameState: opponentTurn,
+            selectedPoint: null,
+            quantumCtx: {
+              ...quantumCtx, phase: 'opponent',
+              branchA: capturedBranchA, branchB: capturedBranchA,
+              branchAMoves: [moveRecord], branchBMoves: [moveRecord],
+            },
+          })
+          return
+        }
+        // More dice left — continue to Branch B moves
         set({
-          gameState: opponentTurn,
+          gameState: next,
           selectedPoint: null,
-          quantumCtx: { ...quantumCtx, phase: 'opponent', branchA, branchB, branchAMoves: updatedAMoves, branchBMoves },
+          quantumCtx: {
+            ...quantumCtx,
+            branchA: capturedBranchA,
+            branchAMoves: [moveRecord],
+            branchBMoves: [moveRecord],  // B starts as the same first move
+          },
         })
         return
       }
 
-      // Still mid-turn in Branch A
-      set({ gameState: next, selectedPoint: null, quantumCtx: { ...quantumCtx, branchAMoves: updatedAMoves } })
+      // Building Branch B (subsequent dice after Branch A captured)
+      const updatedBMoves = [...quantumCtx.branchBMoves, moveRecord]
+
+      if (next.phase === 'waiting_roll') {
+        // All dice used — Branch B = final full-turn position
+        const capturedBranchB = extractBranchPositions(next)
+        const opponentTurn = advanceTurn(quantumCtx.preQuantumState)
+        set({
+          gameState: opponentTurn,
+          selectedPoint: null,
+          quantumCtx: {
+            ...quantumCtx, phase: 'opponent',
+            branchB: capturedBranchB, branchBMoves: updatedBMoves,
+          },
+        })
+        return
+      }
+
+      // Mid Branch-B moves — update board and move list
+      set({ gameState: next, selectedPoint: null, quantumCtx: { ...quantumCtx, branchBMoves: updatedBMoves } })
       return
     }
 

@@ -1,4 +1,4 @@
-import type { GameState, Player } from '../store/gameStore'
+import type { GameState, Player, QuantumBranchPositions } from '../store/gameStore'
 import { getValidMoves } from './rules'
 
 function opponent(player: Player): Player {
@@ -145,4 +145,12 @@ export function applySpyMove(
 
   state.valid_moves = getValidMoves(state)
   return state
+}
+
+export function extractBranchPositions(state: GameState): QuantumBranchPositions {
+  return {
+    board: state.board.map(pt => ({ ...pt })),
+    bar: { ...state.bar },
+    off: { ...state.off },
+  }
 }

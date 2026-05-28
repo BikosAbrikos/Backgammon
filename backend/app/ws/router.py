@@ -282,44 +282,51 @@ async def game_ws(websocket: WebSocket, room_id: str):
 
                 state = apply_move(state, from_pos, to_pos)
 
-                # Quantum building phase: detect Branch A completion
-                if room.quantum_phase == "building" and state.phase == Phase.WAITING_ROLL:
-                    # Record the move that completed Branch A
-                    room.quantum_branch_a_moves.append({
-                        "from_pos": from_pos, "to_pos": to_pos, "die_value": 0
-                    })
-                    branch_a = extract_board_positions(state)
-                    branch_b_data = generate_random_branch(copy.deepcopy(room.quantum_pre_state))
+                # Quantum building phase:
+                # Branch A = state after FIRST die used (captured automatically)
+                # Branch B = state after ALL dice used (player's full turn)
+                if room.quantum_phase == "building":
+                    this_move = {"from_pos": from_pos, "to_pos": to_pos, "die_value": 0}
 
-                    room.quantum_branch_a = branch_a
-                    room.quantum_branch_b = branch_b_data["positions"]
-                    room.quantum_branch_b_moves = branch_b_data["moves"]
-                    room.quantum_phase = "opponent"
+                    if room.quantum_branch_a is None:
+                        # First move just made — capture Branch A
+                        room.quantum_branch_a = extract_board_positions(state)
+                        room.quantum_branch_a_moves = [this_move]
+                        room.quantum_branch_b_moves = [this_move]  # B starts same as A
+                    else:
+                        # Subsequent moves — accumulate into Branch B
+                        room.quantum_branch_b_moves.append(this_move)
 
-                    # Advance from pre-quantum state (opponent plays on original board)
-                    opp_state = copy.deepcopy(room.quantum_pre_state)
-                    opp_state = _advance_turn(opp_state)
-                    # Preserve the mode
-                    opp_state.mode = state.mode
-                    room.state = opp_state
+                    if state.phase == Phase.WAITING_ROLL:
+                        # All dice used — Branch B = final state; quantum complete
+                        room.quantum_branch_b = extract_board_positions(state)
+                        room.quantum_phase = "opponent"
 
+                        opp_state = copy.deepcopy(room.quantum_pre_state)
+                        opp_state = _advance_turn(opp_state)
+                        opp_state.mode = state.mode
+                        room.state = opp_state
+
+                        await room.broadcast({
+                            "type": "quantum_branches",
+                            "state": opp_state.model_dump(),
+                            "players": room.players_info(),
+                            "quantum_player": room.quantum_player,
+                            "branch_a": room.quantum_branch_a,
+                            "branch_b": room.quantum_branch_b,
+                            "branch_a_moves": room.quantum_branch_a_moves,
+                            "branch_b_moves": room.quantum_branch_b_moves,
+                        })
+                        continue
+
+                    # Branch B not yet complete — broadcast intermediate state
+                    room.state = state
                     await room.broadcast({
-                        "type": "quantum_branches",
-                        "state": opp_state.model_dump(),
+                        "type": "game_state",
+                        "state": state.model_dump(),
                         "players": room.players_info(),
-                        "quantum_player": room.quantum_player,
-                        "branch_a": branch_a,
-                        "branch_b": branch_b_data["positions"],
-                        "branch_a_moves": room.quantum_branch_a_moves,
-                        "branch_b_moves": branch_b_data["moves"],
                     })
                     continue
-
-                # Track quantum building moves (not yet done)
-                if room.quantum_phase == "building":
-                    room.quantum_branch_a_moves.append({
-                        "from_pos": from_pos, "to_pos": to_pos, "die_value": 0
-                    })
 
                 room.state = state
 

@@ -65,49 +65,63 @@ function ModeSelect({
 // ── Quantum modal ─────────────────────────────────────────────────────────────
 
 function QuantumModal({ onClose }: { onClose: () => void }) {
-  const [opponent, setOpponent] = useState<'bot' | 'local'>('bot')
+  const [opponent, setOpponent] = useState<'bot' | 'local' | 'online'>('bot')
   const [level, setLevel] = useState<BotLevel>('medium')
   const [loading, setLoading] = useState(false)
-  const { startBotGame, startLocalGame } = useGameStore()
+  const { startBotGame, startLocalGame, setOnlineGame } = useGameStore()
+  const { token } = useAuthStore()
   const navigate = useNavigate()
 
   async function start() {
     setLoading(true)
     if (opponent === 'bot') {
       await startBotGame('quantum', level, 'black')
-    } else {
+      navigate('/game')
+      onClose()
+    } else if (opponent === 'local') {
       await startLocalGame('quantum')
+      navigate('/game')
+      onClose()
+    } else {
+      // Create a private quantum room
+      const { data } = await axios.post(`${API_BASE}/rooms/create`, { mode: 'quantum' },
+        { headers: { Authorization: `Bearer ${token}` } })
+      setOnlineGame(
+        { mode: 'quantum', board: [], bar: { white: 0, black: 0 }, off: { white: 0, black: 0 },
+          current_player: 'white', dice: { values: [], remaining: [] },
+          phase: 'waiting_roll', winner: null, valid_moves: [] },
+        { roomId: data.room_ws_id, myColor: 'white', opponent: { username: 'Waiting…', elo: 0 } }
+      )
+      navigate(`/game/${data.room_ws_id}?code=${data.code}`)
+      onClose()
     }
-    navigate('/game')
-    onClose()
+    setLoading(false)
   }
 
   return (
     <Modal title="⚛️ Quantum Backgammon" onClose={onClose}>
-      {/* Explanation */}
       <div className="text-xs text-stone-500 leading-relaxed border border-cyan-900/40 bg-cyan-900/10 rounded-lg p-3">
-        Play your moves normally. The system auto-generates a <span className="text-cyan-300 font-semibold">parallel branch</span> randomly.
-        Your opponent sees both as ghost overlays. After their turn,
-        one branch <span className="text-cyan-300 font-semibold">collapses at random</span> — 50 / 50.
+        Your <span className="text-cyan-300 font-semibold">first move</span> = Branch A ·
+        Your <span className="text-cyan-300 font-semibold">remaining moves</span> = Branch B.
+        Opponent sees both as ghost overlays. After their turn, one branch
+        <span className="text-cyan-300 font-semibold"> collapses at random</span> — 50 / 50.
       </div>
 
-      {/* Opponent type */}
       <div className="flex flex-col gap-1.5">
         <label className="text-stone-400 text-xs font-semibold uppercase tracking-wider">Play Against</label>
         <div className="flex gap-2">
-          {(['bot', 'local'] as const).map(o => (
+          {([['bot', '🤖 Bot'], ['local', '🎮 Local 2P'], ['online', '🌐 Online']] as const).map(([o, label]) => (
             <button key={o} onClick={() => setOpponent(o)}
-              className={['flex-1 py-2 rounded-lg border text-sm font-semibold transition-colors',
+              className={['flex-1 py-2 rounded-lg border text-xs font-semibold transition-colors',
                 opponent === o
                   ? 'border-cyan-500 bg-cyan-900/30 text-cyan-300'
                   : 'border-stone-700 text-stone-500 hover:border-stone-500'].join(' ')}>
-              {o === 'bot' ? '🤖 Bot' : '🎮 Local 2P'}
+              {label}
             </button>
           ))}
         </div>
       </div>
 
-      {/* Difficulty (bot only) */}
       {opponent === 'bot' && (
         <div className="flex flex-col gap-1.5">
           <label className="text-stone-400 text-xs font-semibold uppercase tracking-wider">Bot Difficulty</label>
@@ -125,6 +139,12 @@ function QuantumModal({ onClose }: { onClose: () => void }) {
         </div>
       )}
 
+      {opponent === 'online' && (
+        <p className="text-xs text-stone-500 text-center">
+          Creates a private room — share the link with a friend.
+        </p>
+      )}
+
       <button onClick={start} disabled={loading}
         className="py-3 rounded-xl font-bold text-stone-900 bg-gradient-to-b from-cyan-300 to-cyan-500 border border-cyan-600 hover:from-cyan-200 hover:to-cyan-400 transition-all disabled:opacity-50">
         {loading ? 'Starting…' : '⚛️ Start Quantum Game'}
@@ -136,21 +156,36 @@ function QuantumModal({ onClose }: { onClose: () => void }) {
 // ── Spy modal ─────────────────────────────────────────────────────────────────
 
 function SpyModal({ onClose }: { onClose: () => void }) {
-  const [opponent, setOpponent] = useState<'bot' | 'local'>('bot')
+  const [opponent, setOpponent] = useState<'bot' | 'local' | 'online'>('bot')
   const [level, setLevel] = useState<BotLevel>('medium')
   const [loading, setLoading] = useState(false)
-  const { startBotGame, startLocalGame } = useGameStore()
+  const { startBotGame, startLocalGame, setOnlineGame } = useGameStore()
+  const { token } = useAuthStore()
   const navigate = useNavigate()
 
   async function start() {
     setLoading(true)
     if (opponent === 'bot') {
       await startBotGame('spy', level, 'black')
-    } else {
+      navigate('/game')
+      onClose()
+    } else if (opponent === 'local') {
       await startLocalGame('spy')
+      navigate('/game')
+      onClose()
+    } else {
+      const { data } = await axios.post(`${API_BASE}/rooms/create`, { mode: 'spy' },
+        { headers: { Authorization: `Bearer ${token}` } })
+      setOnlineGame(
+        { mode: 'spy', board: [], bar: { white: 0, black: 0 }, off: { white: 0, black: 0 },
+          current_player: 'white', dice: { values: [], remaining: [] },
+          phase: 'waiting_roll', winner: null, valid_moves: [] },
+        { roomId: data.room_ws_id, myColor: 'white', opponent: { username: 'Waiting…', elo: 0 } }
+      )
+      navigate(`/game/${data.room_ws_id}?code=${data.code}`)
+      onClose()
     }
-    navigate('/game')
-    onClose()
+    setLoading(false)
   }
 
   return (
@@ -159,19 +194,19 @@ function SpyModal({ onClose }: { onClose: () => void }) {
         Move any piece <span className="text-red-400 font-semibold">anywhere</span> — legal or not.
         Each player has <span className="text-red-400 font-semibold">3 illegal moves</span>.
         After every move your opponent has 5 seconds to <span className="text-red-400 font-semibold">challenge</span> you.
-        Catch a cheat → piece goes to bar. Miss it → the move stands forever.
+        Caught cheating → piece goes to bar. Bluff succeeds → move stands forever.
       </div>
 
       <div className="flex flex-col gap-1.5">
         <label className="text-stone-400 text-xs font-semibold uppercase tracking-wider">Play Against</label>
         <div className="flex gap-2">
-          {(['bot', 'local'] as const).map(o => (
+          {([['bot', '🤖 Bot'], ['local', '🎮 Local 2P'], ['online', '🌐 Online']] as const).map(([o, label]) => (
             <button key={o} onClick={() => setOpponent(o)}
-              className={['flex-1 py-2 rounded-lg border text-sm font-semibold transition-colors',
+              className={['flex-1 py-2 rounded-lg border text-xs font-semibold transition-colors',
                 opponent === o
                   ? 'border-red-500 bg-red-900/30 text-red-300'
                   : 'border-stone-700 text-stone-500 hover:border-stone-500'].join(' ')}>
-              {o === 'bot' ? '🤖 Bot' : '🎮 Local 2P'}
+              {label}
             </button>
           ))}
         </div>
@@ -192,6 +227,12 @@ function SpyModal({ onClose }: { onClose: () => void }) {
             ))}
           </div>
         </div>
+      )}
+
+      {opponent === 'online' && (
+        <p className="text-xs text-stone-500 text-center">
+          Creates a private room — share the link with a friend.
+        </p>
       )}
 
       <button onClick={start} disabled={loading}
@@ -256,7 +297,7 @@ function MatchmakingModal({ onClose }: { onClose: () => void }) {
     <Modal title="🏆 Ranked Match" onClose={() => { stopSearch(); onClose() }}>
       {status === 'idle' && (
         <>
-          <ModeSelect label="Game Mode" value={mode} onChange={setMode} modes={['short', 'long', 'quantum', 'spy']} />
+          <ModeSelect label="Game Mode" value={mode} onChange={setMode} />
           <button onClick={startSearch}
             className="py-3 rounded-xl font-bold text-stone-900 bg-gradient-to-b from-amber-300 to-amber-500 border border-amber-600 hover:from-amber-200 hover:to-amber-400 transition-all">
             Find Match

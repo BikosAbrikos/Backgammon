@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams, useLocation } from 'react-router-dom'
 import { useGameStore } from '../store/gameStore'
 import type { GameState, OnlineContext, Player, QuantumCtx, SpyCtx } from '../store/gameStore'
 import { useAuthStore } from '../store/authStore'
@@ -208,11 +208,11 @@ function QuantumMovesPanel({ ctx }: { ctx: import('../store/gameStore').QuantumC
         <div className="text-stone-500 text-[10px] mt-0.5">Opponent sees both branches</div>
       </div>
 
-      {/* Branch A — player's moves */}
+      {/* Branch A — first move */}
       <div className="flex flex-col gap-1.5">
         <div className="flex items-center gap-1.5 font-semibold text-cyan-400">
           <div className="w-3 h-3 rounded-full bg-cyan-400/70 border border-cyan-300 shrink-0" />
-          Branch A — Your moves
+          Branch A — First move
         </div>
         {ctx.branchAMoves.length === 0
           ? <div className="text-stone-600 pl-4">Playing…</div>
@@ -226,11 +226,11 @@ function QuantumMovesPanel({ ctx }: { ctx: import('../store/gameStore').QuantumC
 
       <div className="border-t border-stone-800" />
 
-      {/* Branch B — system's random moves */}
+      {/* Branch B — full turn */}
       <div className="flex flex-col gap-1.5">
         <div className="flex items-center gap-1.5 font-semibold text-orange-400">
           <div className="w-3 h-3 rounded-full bg-orange-400/70 border border-orange-300 shrink-0" />
-          Branch B — System
+          Branch B — Full turn
         </div>
         {ctx.branchBMoves.length === 0
           ? <div className="text-stone-600 pl-4">Generating…</div>
@@ -444,7 +444,7 @@ function ChatPanel({ messages, onSend }: {
 
 function QuantumStatusBar({ ctx }: { ctx: QuantumCtx }) {
   const labels: Record<QuantumCtx['phase'], string> = {
-    building: '⚛️ Quantum — Play your moves (system auto-generates Branch B)',
+    building: '⚛️ Quantum — Move 1 = Branch A · Move 2 = Branch B',
     opponent: '⚛️ Superposition active — ghost branches visible on board',
   }
   const colors: Record<QuantumCtx['phase'], string> = {
@@ -462,6 +462,8 @@ function QuantumStatusBar({ ctx }: { ctx: QuantumCtx }) {
 
 export default function GamePage() {
   const { roomId } = useParams<{ roomId?: string }>()
+  const { search } = useLocation()
+  const inviteCode = new URLSearchParams(search).get('code')
   const navigate = useNavigate()
   const { token, user } = useAuthStore()
   const {
@@ -684,7 +686,7 @@ export default function GamePage() {
     const mover = spyCtx.lastMove?.mover
     if (mover === botColor) return  // bot made the move; human decides
     const timer = setTimeout(() => {
-      if (botShouldChallenge(spyCtx, botLevel)) {
+      if (botShouldChallenge(botLevel)) {
         challenge()
       } else {
         closeChallengeWindow()
@@ -750,10 +752,33 @@ export default function GamePage() {
     return null
   }
 
-  if (!gameState) {
+  if (!gameState || ((gameType === 'online' || !!roomId) && gameState.board.length === 0)) {
     return (
       <div className="flex-1 flex items-center justify-center">
-        <div className="text-amber-400 text-lg animate-pulse">Connecting to game…</div>
+        <div className="flex flex-col items-center gap-5 p-10 rounded-2xl border border-stone-800/50"
+          style={{ background: 'linear-gradient(135deg,#110a03,#1c0f05)' }}>
+          <div className="text-4xl animate-pulse">⌛</div>
+          <p className="text-amber-300 font-semibold text-lg">Waiting for opponent…</p>
+          {inviteCode && (
+            <>
+              <p className="text-stone-500 text-sm">Share this code with a friend:</p>
+              <div className="flex items-center gap-3">
+                <span className="text-3xl font-mono font-black tracking-[0.2em] text-amber-200 select-all">
+                  {inviteCode}
+                </span>
+                <button
+                  onClick={() => navigator.clipboard.writeText(inviteCode)}
+                  className="text-xs px-3 py-1.5 rounded-lg border border-stone-700 text-stone-400 hover:text-amber-300 hover:border-amber-700 transition-colors"
+                >
+                  Copy
+                </button>
+              </div>
+              <p className="text-stone-600 text-xs">
+                Or share the link: <span className="text-stone-500 select-all">{window.location.origin}/join/{inviteCode}</span>
+              </p>
+            </>
+          )}
+        </div>
       </div>
     )
   }
@@ -787,7 +812,7 @@ export default function GamePage() {
   // Status line text
   function statusText() {
     if (!gameState || isBotThinking) return null
-    if (quantumCtx?.phase === 'building') return 'Play normally — Branch B will be auto-generated'
+    if (quantumCtx?.phase === 'building') return quantumCtx.branchA === null ? 'Make your first move — it becomes Branch A' : 'Now make your remaining moves — they become Branch B'
     if (quantumCtx?.phase === 'opponent') return 'Superposition active — opponent sees ghost branches'
     if (hasBar && gameState.phase === 'moving') return 'Must re-enter from bar first!'
     if (gameState.phase === 'waiting_roll' && !isBotTurn) {
@@ -906,10 +931,19 @@ export default function GamePage() {
         />
       )}
 
-      {spyCtx?.challengeWindowOpen && (
+      {spyCtx?.challengeWindowOpen && spyCtx.lastMove && (
         <ChallengeWindow
           spyCtx={spyCtx}
-          currentPlayer={isOnline && onlineCtx ? onlineCtx.myColor : gameState.current_player}
+          currentPlayer={
+            // For online: show based on who I am (my color)
+            isOnline && onlineCtx ? onlineCtx.myColor
+            // For local 2P: always show the CHALLENGER's view (non-mover sees the button)
+            : gameType === 'local' ? (spyCtx.lastMove.mover === 'white' ? 'black' : 'white')
+            // For bot: if bot made the move, human is challenger; otherwise mover is human
+            : gameType === 'bot' && spyCtx.lastMove.mover === botColor
+              ? (botColor === 'black' ? 'white' : 'black')
+              : gameState.current_player
+          }
           isBot={gameType === 'bot'}
           onChallenge={handleChallenge}
           onClose={handleCloseChallenge}
