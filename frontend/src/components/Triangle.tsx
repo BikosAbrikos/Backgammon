@@ -11,8 +11,9 @@ interface TriangleProps {
   onMove: () => void
   selectedPoint: number | 'bar' | null
   currentPlayer: Player
-  ghostA?: number  // Ghost checker count for quantum Branch A
-  ghostB?: number  // Ghost checker count for quantum Branch B
+  ghostA?: number   // Ghost checker count for quantum Branch A
+  ghostB?: number   // Ghost checker count for quantum Branch B
+  ghostPlayer?: Player  // Which player's pieces are ghosts
 }
 
 const TRIANGLE_COLORS = ['bg-red-700', 'bg-stone-200']
@@ -31,6 +32,7 @@ export default function Triangle({
   currentPlayer,
   ghostA,
   ghostB,
+  ghostPlayer,
 }: TriangleProps) {
   const colorIndex = index % 2
   const baseColor = TRIANGLE_COLORS[colorIndex]
@@ -119,27 +121,63 @@ export default function Triangle({
         </>
       )}
 
-      {/* Quantum ghost badges */}
-      {hasGhost && (
-        <div
-          className={[
-            'absolute left-1/2 -translate-x-1/2 flex gap-0.5 pointer-events-none',
-            orientation === 'up' ? 'top-1' : 'bottom-1',
-          ].join(' ')}
-          style={{ zIndex: 20 }}
-        >
-          {ghostA !== undefined && ghostA > 0 && (
-            <div className="w-5 h-5 rounded-full bg-cyan-500/70 border border-cyan-300 flex items-center justify-center text-[9px] font-bold text-white shadow-lg">
-              {ghostA}
-            </div>
-          )}
-          {ghostB !== undefined && ghostB > 0 && (
-            <div className="w-5 h-5 rounded-full bg-orange-500/70 border border-orange-300 flex items-center justify-center text-[9px] font-bold text-white shadow-lg">
-              {ghostB}
-            </div>
-          )}
-        </div>
-      )}
+      {/* Quantum ghost checkers — semi-transparent overlays for Branch A (cyan) and Branch B (orange) */}
+      {hasGhost && ghostPlayer && (() => {
+        const isWhiteGhost = ghostPlayer === 'white'
+        const ghostCount = Math.max(ghostA ?? 0, ghostB ?? 0)
+        const visible = Math.min(ghostCount, MAX_STACK)
+        return (
+          <div className="absolute inset-0 pointer-events-none" style={{ zIndex: 15 }}>
+            {Array.from({ length: visible }).map((_, i) => {
+              const offset = i * STEP
+              const posStyle: React.CSSProperties =
+                orientation === 'up'
+                  ? { bottom: `${6 + offset}px`, zIndex: i }
+                  : { top: `${6 + offset}px`, zIndex: i }
+              return (
+                <div
+                  key={i}
+                  className="absolute left-1/2 -translate-x-1/2"
+                  style={posStyle}
+                >
+                  {/* Branch A ghost (cyan tint) */}
+                  {ghostA !== undefined && ghostA > i && (
+                    <div
+                      className={[
+                        'w-8 h-8 rounded-full border-2 flex items-center justify-center absolute -translate-x-1/2',
+                        isWhiteGhost
+                          ? 'bg-amber-50 border-cyan-400'
+                          : 'bg-stone-900 border-cyan-400',
+                      ].join(' ')}
+                      style={{
+                        opacity: 0.45,
+                        boxShadow: '0 0 8px 2px rgba(34,211,238,0.6)',
+                        left: ghostB !== undefined && ghostB > i ? '-6px' : '0px',
+                      }}
+                    />
+                  )}
+                  {/* Branch B ghost (orange tint) */}
+                  {ghostB !== undefined && ghostB > i && (
+                    <div
+                      className={[
+                        'w-8 h-8 rounded-full border-2 flex items-center justify-center absolute -translate-x-1/2',
+                        isWhiteGhost
+                          ? 'bg-amber-50 border-orange-400'
+                          : 'bg-stone-900 border-orange-400',
+                      ].join(' ')}
+                      style={{
+                        opacity: 0.45,
+                        boxShadow: '0 0 8px 2px rgba(251,146,60,0.6)',
+                        left: ghostA !== undefined && ghostA > i ? '6px' : '0px',
+                      }}
+                    />
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        )
+      })()}
     </div>
   )
 }

@@ -66,7 +66,7 @@ export function applyMove(
     state.off[player]++
   } else {
     const dest = state.board[toPos]
-    if (state.mode === 'short' && dest.player === opp && dest.count === 1) {
+    if ((state.mode === 'short' || state.mode === 'quantum') && dest.player === opp && dest.count === 1) {
       state.bar[opp]++
       dest.count = 0
       dest.player = null

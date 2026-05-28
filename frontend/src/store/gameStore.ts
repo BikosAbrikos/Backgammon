@@ -62,7 +62,7 @@ export interface QuantumBranchPositions {
 }
 
 export interface QuantumCtx {
-  phase: 'building_a' | 'building_b' | 'opponent'
+  phase: 'building' | 'opponent'
   quantumPlayer: Player
   /** Board state the moment quantum mode was entered (dice already rolled, no moves yet) */
   preQuantumState: GameState
@@ -120,6 +120,18 @@ function extractBranchPositions(state: GameState): QuantumBranchPositions {
     bar: { ...state.bar },
     off: { ...state.off },
   }
+}
+
+// Generates a random-but-valid complete move sequence from the given state.
+// Used to auto-create Branch B after the player finishes Branch A.
+function generateRandomBranch(startState: GameState): QuantumBranchPositions {
+  let s: GameState = JSON.parse(JSON.stringify(startState))
+  let safety = 0
+  while (s.phase === 'moving' && s.valid_moves.length > 0 && safety++ < 20) {
+    const move = s.valid_moves[Math.floor(Math.random() * s.valid_moves.length)]
+    s = applyMove(s, move.from_pos, move.to_pos)
+  }
+  return extractBranchPositions(s)
 }
 
 // ── Store ──────────────────────────────────────────────────────────────────────
@@ -255,7 +267,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     let autoQuantumCtx: QuantumCtx | null = null
     if (next.mode === 'quantum' && next.phase === 'moving') {
       autoQuantumCtx = {
-        phase: 'building_a',
+        phase: 'building',
         quantumPlayer: next.current_player,
         preQuantumState: next,
         branchA: null,
@@ -310,26 +322,16 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const next = applyMove(gameState, selectedPoint, to)
 
     // ── Quantum branch handling ────────────────────────────────────────────────
-    if (quantumCtx?.phase === 'building_a' && next.phase === 'waiting_roll') {
-      // Branch A complete — save positions and start Branch B from pre-quantum state
+    if (quantumCtx?.phase === 'building' && next.phase === 'waiting_roll') {
+      // Branch A (player's moves) complete — auto-generate Branch B randomly,
+      // then immediately hand off to the opponent
       const branchA = extractBranchPositions(next)
-      const branchBStart: GameState = { ...quantumCtx.preQuantumState }
-      set({
-        gameState: branchBStart,
-        selectedPoint: null,
-        quantumCtx: { ...quantumCtx, phase: 'building_b', branchA },
-      })
-      return
-    }
-
-    if (quantumCtx?.phase === 'building_b' && next.phase === 'waiting_roll') {
-      // Branch B complete — commit quantum state, advance turn to opponent
-      const branchB = extractBranchPositions(next)
+      const branchB = generateRandomBranch(quantumCtx.preQuantumState)
       const opponentTurn = advanceTurn(quantumCtx.preQuantumState)
       set({
         gameState: opponentTurn,
         selectedPoint: null,
-        quantumCtx: { ...quantumCtx, phase: 'opponent', branchB },
+        quantumCtx: { ...quantumCtx, phase: 'opponent', branchA, branchB },
       })
       return
     }
@@ -349,7 +351,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
     set({
       quantumCtx: {
-        phase: 'building_a',
+        phase: 'building',
         quantumPlayer: gameState.current_player,
         preQuantumState: gameState,
         branchA: null,

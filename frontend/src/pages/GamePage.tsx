@@ -230,13 +230,11 @@ function ChatPanel({ messages, onSend }: {
 
 function QuantumStatusBar({ ctx }: { ctx: QuantumCtx }) {
   const labels: Record<QuantumCtx['phase'], string> = {
-    building_a: '⚛️ Quantum — Building Branch A (🔵 cyan)',
-    building_b: '⚛️ Quantum — Building Branch B (🟠 orange)',
-    opponent: '⚛️ Quantum Superposition — waiting for collapse…',
+    building: '⚛️ Quantum — Play your moves (system auto-generates Branch B)',
+    opponent: '⚛️ Superposition active — ghost branches visible on board',
   }
   const colors: Record<QuantumCtx['phase'], string> = {
-    building_a: 'bg-cyan-900/40 border-cyan-500/40 text-cyan-300',
-    building_b: 'bg-orange-900/40 border-orange-500/40 text-orange-300',
+    building: 'bg-cyan-900/40 border-cyan-500/40 text-cyan-300',
     opponent: 'bg-purple-900/40 border-purple-500/40 text-purple-300',
   }
   return (
@@ -438,9 +436,8 @@ export default function GamePage() {
   // Status line text
   function statusText() {
     if (!gameState || isBotThinking) return null
-    if (quantumCtx?.phase === 'building_a') return 'Make your moves for Branch A, then use all dice'
-    if (quantumCtx?.phase === 'building_b') return 'Make your moves for Branch B, then use all dice'
-    if (quantumCtx?.phase === 'opponent') return 'Quantum superposition active — awaiting collapse'
+    if (quantumCtx?.phase === 'building') return 'Play normally — Branch B will be auto-generated'
+    if (quantumCtx?.phase === 'opponent') return 'Superposition active — opponent sees ghost branches'
     if (hasBar && gameState.phase === 'moving') return 'Must re-enter from bar first!'
     if (gameState.phase === 'waiting_roll' && !isBotTurn) {
       if (isOnline && onlineCtx) {
@@ -494,10 +491,9 @@ export default function GamePage() {
             {isBotThinking && <span className="text-amber-400">Bot is thinking…</span>}
             {!isBotThinking && status && (
               <span className={[
-                quantumCtx?.phase === 'building_a' ? 'text-cyan-400' :
-                quantumCtx?.phase === 'building_b' ? 'text-orange-400' :
+                quantumCtx?.phase === 'building' ? 'text-cyan-400' :
                 quantumCtx?.phase === 'opponent' ? 'text-purple-400' :
-                hasBar && gameState?.phase === 'moving' ? 'text-red-400 font-semibold' :
+                hasBar && gameState.phase === 'moving' ? 'text-red-400 font-semibold' :
                 selectedPoint !== null ? 'text-green-400' :
                 'text-amber-300',
               ].join('')}>
@@ -521,7 +517,7 @@ export default function GamePage() {
           <Dice
             dice={gameState.dice}
             onRoll={effectiveRoll}
-            canRoll={canRoll && !isBotThinking && !quantumCtx}
+            canRoll={canRoll && !isBotThinking && quantumCtx?.phase !== 'building'}
             isRolling={isRolling}
           />
         </div>

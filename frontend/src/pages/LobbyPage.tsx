@@ -69,7 +69,7 @@ function QuantumModal({ onClose }: { onClose: () => void }) {
     <Modal title="⚛️ Quantum Backgammon" onClose={onClose}>
       {/* Explanation */}
       <div className="text-xs text-stone-500 leading-relaxed border border-cyan-900/40 bg-cyan-900/10 rounded-lg p-3">
-        Each turn you play <span className="text-cyan-300 font-semibold">two move branches</span> with the same dice.
+        Play your moves normally. The system auto-generates a <span className="text-cyan-300 font-semibold">parallel branch</span> randomly.
         Your opponent sees both as ghost overlays. After their turn,
         one branch <span className="text-cyan-300 font-semibold">collapses at random</span> — 50 / 50.
       </div>

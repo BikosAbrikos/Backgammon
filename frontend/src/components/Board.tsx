@@ -154,6 +154,7 @@ export default function Board({ gameState, selectedPoint, onSelectPoint, onMoveT
               currentPlayer={current_player}
               ghostA={ghostA}
               ghostB={ghostB}
+              ghostPlayer={ghostBranches?.quantumPlayer}
             />
           )
         })}
@@ -175,6 +176,7 @@ export default function Board({ gameState, selectedPoint, onSelectPoint, onMoveT
               currentPlayer={current_player}
               ghostA={ghostA}
               ghostB={ghostB}
+              ghostPlayer={ghostBranches?.quantumPlayer}
             />
           )
         })}

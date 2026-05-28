@@ -6,7 +6,8 @@ function direction(player: Player): number {
 
 function pointIsBlocked(point: PointState, player: Player, mode: GameMode): boolean {
   if (!point.player || point.player === player) return false
-  return mode === 'short' ? point.count >= 2 : point.count >= 1
+  // quantum uses short rules (landing on blots sends to bar)
+  return (mode === 'short' || mode === 'quantum') ? point.count >= 2 : point.count >= 1
 }
 
 function canBearOff(state: GameState, player: Player): boolean {
