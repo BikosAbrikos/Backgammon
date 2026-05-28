@@ -482,6 +482,15 @@ export default function GamePage() {
   const [opponentLeft, setOpponentLeft] = useState(false)
   const [showCollapse, setShowCollapse] = useState(false)
 
+  // Reset all game state when the player leaves this page (back button, link click, etc.)
+  useEffect(() => {
+    return () => {
+      wsRef.current?.close()
+      reset()
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   // ── Online WS management ───────────────────────────────────────────────────
 
   useEffect(() => {
@@ -677,7 +686,11 @@ export default function GamePage() {
     runBot()
     return () => { cancelled = true }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gameState?.current_player, gameState?.phase, spyCtx?.challengeWindowOpen, gameType, botColor])
+  // NOTE: gameState?.phase intentionally excluded — including it would cancel the bot's
+  // own async loop the moment it rolls dice (waiting_roll → moving triggers cleanup).
+  // Spy continuation is already covered by spyCtx?.challengeWindowOpen.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gameState?.current_player, spyCtx?.challengeWindowOpen, gameType, botColor])
 
   // ── Bot spy challenge automation ──────────────────────────────────────────
 
