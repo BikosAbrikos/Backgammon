@@ -142,6 +142,26 @@ async def game_ws(websocket: WebSocket, room_id: str):
                 room.state.mode = GameMode(room.mode)
                 room.state.valid_moves = get_valid_moves(room.state)
 
+                # Private rooms: the first player is already waiting in their own WS loop.
+                # Notify them that the second player joined and the game is starting.
+                # (Ranked rooms: both players are pre-populated from matchmaking and each
+                #  receives their own game_state when they individually connect — no extra
+                #  broadcast needed there.)
+                if room.game_type == "private":
+                    _state_dump = room.state.model_dump()
+                    _info = room.players_info()
+                    for _c, _conn in room.players.items():
+                        if _c != color and _conn.connected:
+                            try:
+                                await _conn.ws.send_text(json.dumps({
+                                    "type": "game_state",
+                                    "state": _state_dump,
+                                    "players": _info,
+                                    "your_color": _c,
+                                }, default=str))
+                            except Exception:
+                                pass
+
         if color is None:
             room.spectators.append(websocket)
 
@@ -189,6 +209,16 @@ async def game_ws(websocket: WebSocket, room_id: str):
                     use_a = random.random() < 0.5
                     chosen = room.quantum_branch_a if use_a else room.quantum_branch_b
                     state = collapse_quantum(state, chosen, room.quantum_player)
+
+                    # Tell both clients which branch survived BEFORE the dice roll so the
+                    # collapse animation fires and ghost overlays are cleared.
+                    await room.broadcast({
+                        "type": "quantum_collapse",
+                        "state": state.model_dump(),
+                        "branch": "A" if use_a else "B",
+                        "players": room.players_info(),
+                    })
+
                     room.quantum_phase = None
                     room.quantum_player = None
                     room.quantum_pre_state = None

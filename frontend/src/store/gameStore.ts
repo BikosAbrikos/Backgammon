@@ -157,6 +157,7 @@ interface GameStore {
   startBotGame: (mode: GameMode, level: BotLevel, botColor: Player) => Promise<void>
   setOnlineGame: (state: GameState, ctx: OnlineContext) => void
   receiveOnlineState: (state: GameState) => void
+  updateOnlineOpponent: (opp: { username: string; elo: number }) => void
   setEloChange: (change: { white: number; black: number }) => void
 
   // Gameplay (local + bot)
@@ -270,6 +271,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
   },
 
   receiveOnlineState: (state) => set({ gameState: state }),
+  updateOnlineOpponent: (opp) => {
+    const { onlineCtx } = get()
+    if (onlineCtx) set({ onlineCtx: { ...onlineCtx, opponent: opp } })
+  },
   setEloChange: (change) => set({ eloChange: change }),
 
   rollDice: () => {

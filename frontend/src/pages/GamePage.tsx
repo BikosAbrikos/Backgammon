@@ -608,6 +608,7 @@ export default function GamePage() {
     spyCtx, spyResult, pendingFlush,
     rollDice, selectPoint, moveTo, clearSelection,
     setBotThinking, applyBotState, applyBotSpyMove, setOnlineGame, receiveOnlineState,
+    updateOnlineOpponent,
     setEloChange, addChat, reset, clearCollapsedBranch,
     challenge, closeChallengeWindow, clearSpyResult,
     setSpyCtxOnline, setQuantumCtxOnline, setCollapsedBranchOnline, setSpyResultOnline,
@@ -666,6 +667,14 @@ export default function GamePage() {
               opponent: msg.players?.[msg.your_color === 'white' ? 'black' : 'white'] ?? { username: 'Opponent', elo: 0 },
             })
           }
+          // Private room: creator already has myColor set but opponent starts as "Waiting…".
+          // When the second player joins, the backend sends a game_state with players info —
+          // update the opponent card without resetting the rest of the game store.
+          if (msg.players && onlineCtx?.opponent?.username === 'Waiting…') {
+            const oppColor = onlineCtx.myColor === 'white' ? 'black' : 'white'
+            const opp = msg.players[oppColor]
+            if (opp && opp.username !== 'Waiting…') updateOnlineOpponent(opp)
+          }
           if (msg.quantum_phase === 'building') {
             setQuantumCtxOnline({
               phase: 'building',
@@ -720,7 +729,7 @@ export default function GamePage() {
           })
 
         } else if (msg.type === 'quantum_collapse') {
-          receiveOnlineState(msg.state)
+          if (msg.state) receiveOnlineState(msg.state)
           setQuantumCtxOnline(null)
           setCollapsedBranchOnline(msg.branch)
           setShowCollapse(true)

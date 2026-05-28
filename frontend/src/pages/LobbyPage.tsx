@@ -390,7 +390,7 @@ function PrivateModal({ onClose }: { onClose: () => void }) {
           phase: 'waiting_roll', winner: null, valid_moves: [] },
         { roomId: data.room_ws_id, myColor: 'white', opponent: { username: 'Waiting…', elo: 0 } }
       )
-      navigate(`/game/${data.room_ws_id}`)
+      navigate(`/game/${data.room_ws_id}?code=${data.code}`)
       onClose()
     } catch (e: any) {
       setError(e?.response?.data?.detail ?? 'Failed to create room')
