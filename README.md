@@ -2,7 +2,7 @@
 
 > A production-grade multiplayer backgammon platform with real-time ranked play, a three-tier AI engine, and two original game modes — **Spy** and **Quantum** — that fundamentally reimagine what the 5,000-year-old game can be.
 
-**Live demo:** [backgammon-pro.vercel.app](https://backgammon-pro.vercel.app)  
+**Live demo:** [https://backgammon-1-nzk9.onrender.com/](https://backgammon-1-nzk9.onrender.com/)  
 **Repository:** [github.com/BikosAbrikos/Backgammon](https://github.com/BikosAbrikos/Backgammon)
 
 ---
