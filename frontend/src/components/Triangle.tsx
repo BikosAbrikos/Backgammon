@@ -18,7 +18,7 @@ interface TriangleProps {
   locked?: boolean  // Board locked during challenge window
 }
 
-const TRIANGLE_COLORS = ['bg-red-700', 'bg-stone-200']
+const TRIANGLE_COLORS = ['bg-red-600', 'bg-yellow-500']
 const MAX_STACK = 6
 const STEP = 22
 
@@ -73,9 +73,9 @@ export default function Triangle({
       <div
         className={[
           'absolute inset-0 transition-colors duration-150',
-          isHighlighted ? 'bg-green-500 opacity-80'
-            : isSpyHighlighted ? 'bg-red-600 opacity-70'
-            : `${baseColor} opacity-90`,
+          isHighlighted ? 'bg-green-400 opacity-90'
+            : isSpyHighlighted ? 'bg-red-500 opacity-85'
+            : baseColor,
         ].join(' ')}
         style={{ clipPath: clip }}
       />

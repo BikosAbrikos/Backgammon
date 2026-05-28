@@ -36,7 +36,7 @@ function BarZone({
   const blackBar = bar.black
 
   return (
-    <div className="flex flex-col justify-center items-center gap-2 w-12 bg-amber-800 rounded">
+    <div className="flex flex-col justify-center items-center gap-2 w-12 rounded" style={{ background: '#0d4a1f' }}>
       {/* Black's bar checkers (top) */}
       <div
         className={['flex flex-col items-center gap-0.5', current_player === 'black' && blackBar > 0 ? 'cursor-pointer' : ''].join(' ')}
@@ -83,8 +83,8 @@ function BearOffZone({
         'flex flex-col items-center justify-end gap-0.5 p-2 rounded-lg h-full',
         'border-2 transition-all duration-150 min-w-[3rem]',
         isValidDest
-          ? 'border-green-400 bg-green-900/30 cursor-pointer highlight-pulse'
-          : 'border-stone-600 bg-stone-800/40',
+          ? 'border-green-400 bg-green-800/40 cursor-pointer highlight-pulse'
+          : 'border-green-900/60 bg-green-950/30',
       ].join(' ')}
       onClick={isValidDest ? onMove : undefined}
     >
@@ -109,6 +109,15 @@ function BearOffZone({
 
 export default function Board({ gameState, selectedPoint, onSelectPoint, onMoveToPoint, ghostBranches, spyCtx }: BoardProps) {
   const { board, current_player, valid_moves } = gameState
+
+  // Guard: board hasn't been populated yet (online game waiting for WS state)
+  if (!board || board.length < 24) {
+    return (
+      <div className="flex-1 flex items-center justify-center h-96 rounded-2xl border border-stone-800/40 bg-stone-900/20">
+        <span className="text-amber-400 animate-pulse">Connecting to game…</span>
+      </div>
+    )
+  }
 
   const locked = spyCtx?.challengeWindowOpen ?? false
 
@@ -223,14 +232,14 @@ export default function Board({ gameState, selectedPoint, onSelectPoint, onMoveT
       <div
         className="flex-1 rounded-2xl overflow-hidden"
         style={{
-          background: 'linear-gradient(180deg, #7c4f2a 0%, #5c3310 100%)',
-          padding: '8px',
-          boxShadow: '0 8px 32px rgba(0,0,0,0.7), inset 0 1px 0 rgba(255,200,100,0.2)',
+          background: 'linear-gradient(180deg, #8b5e3c 0%, #6b3e1e 100%)',
+          padding: '10px',
+          boxShadow: '0 8px 32px rgba(0,0,0,0.7), inset 0 1px 0 rgba(255,200,100,0.15)',
         }}
       >
         <div
           className="h-full flex flex-col rounded-xl overflow-hidden"
-          style={{ background: '#2d1b0e', minHeight: '480px' }}
+          style={{ background: '#1d6b35', minHeight: '480px' }}
         >
           {/* Top row (points 12-23) */}
           <div className="relative flex h-[46%]" style={{ minHeight: '220px' }}>
@@ -245,12 +254,12 @@ export default function Board({ gameState, selectedPoint, onSelectPoint, onMoveT
           </div>
 
           {/* Center divider */}
-          <div className="flex items-center justify-center h-[8%] bg-stone-900/50">
-            <div className="h-px flex-1 bg-amber-900/50" />
-            <div className="px-4 text-amber-700/60 text-xs font-mono tracking-widest">
+          <div className="flex items-center justify-center h-[8%]" style={{ background: '#155c2b' }}>
+            <div className="h-px flex-1" style={{ background: 'rgba(0,0,0,0.3)' }} />
+            <div className="px-4 text-green-200/50 text-xs font-mono tracking-widest">
               {ghostBranches ? '⚛ QUANTUM ⚛' : '◆ BACKGAMMON ◆'}
             </div>
-            <div className="h-px flex-1 bg-amber-900/50" />
+            <div className="h-px flex-1" style={{ background: 'rgba(0,0,0,0.3)' }} />
           </div>
 
           {/* Bottom row (points 11-0) */}

@@ -270,6 +270,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
       chatMessages: [],
       eloChange: null,
       quantumCtx: null,
+      spyCtx: null,
+      spyResult: null,
     })
   },
 
