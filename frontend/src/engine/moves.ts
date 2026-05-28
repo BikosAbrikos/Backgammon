@@ -94,3 +94,55 @@ export function applyMove(
 
   return state
 }
+
+// Spy mode: apply a move that may be illegal (ignores direction/distance/blocking rules).
+// Consumes the smallest remaining die. Does NOT advance the turn — the challenge
+// window must close first (handled by gameStore.closeChallengeWindow).
+export function applySpyMove(
+  state: GameState,
+  fromPos: number | 'bar',
+  toPos: number,
+): GameState {
+  state = JSON.parse(JSON.stringify(state)) as GameState
+  const player = state.current_player
+  const opp = opponent(player)
+
+  // Consume smallest remaining die
+  const die = Math.min(...state.dice.remaining)
+  const dieIdx = state.dice.remaining.indexOf(die)
+  state.dice.remaining.splice(dieIdx, 1)
+
+  // Remove from source
+  if (fromPos === 'bar') {
+    state.bar[player]--
+  } else {
+    const src = state.board[fromPos]
+    src.count--
+    if (src.count === 0) src.player = null
+  }
+
+  // Place at destination
+  const dest = state.board[toPos]
+  if (dest.player === opp && dest.count === 1) {
+    // Hit a blot — send opponent to bar
+    state.bar[opp]++
+    dest.count = 0
+    dest.player = null
+    dest.count++
+    dest.player = player
+  } else if (dest.player === opp && dest.count >= 2) {
+    // Doubly-blocked point — piece physically can't land; hold on bar temporarily
+    state.bar[player]++
+  } else {
+    dest.count++
+    dest.player = player
+  }
+
+  // Check win (unlikely but possible)
+  if (state.off[player] === 15) {
+    return { ...state, phase: 'game_over', winner: player, valid_moves: [] }
+  }
+
+  state.valid_moves = getValidMoves(state)
+  return state
+}

@@ -1,17 +1,17 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useGameStore } from '../store/gameStore'
-import type { GameState, OnlineContext, Player, QuantumCtx } from '../store/gameStore'
+import type { GameState, OnlineContext, Player, QuantumCtx, SpyCtx } from '../store/gameStore'
 import { useAuthStore } from '../store/authStore'
 import type { AuthUser } from '../store/authStore'
 import Board from '../components/Board'
 import Dice from '../components/Dice'
 import TopBar from '../components/TopBar'
-import { botChooseMove, delay } from '../engine/bot'
+import { botChooseMove, botShouldChallenge, botChooseSpyMove, delay } from '../engine/bot'
 import type { BotLevel } from '../engine/bot'
 import { rollDice as localRollDice } from '../engine/dice'
 import { getValidMoves } from '../engine/rules'
-import { applyMove, advanceTurn } from '../engine/moves'
+import { applyMove, applySpyMove, advanceTurn } from '../engine/moves'
 
 const WS_BASE = (import.meta.env.VITE_WS_URL ?? (import.meta.env.VITE_API_URL ?? '').replace('https://', 'wss://').replace('http://', 'ws://'))
 
@@ -267,6 +267,132 @@ function QuantumMovesPanel({ ctx }: { ctx: import('../store/gameStore').QuantumC
   )
 }
 
+// ── Spy Mode UI ───────────────────────────────────────────────────────────────
+
+function SpyTokenBar({ spyCtx, gameState }: { spyCtx: SpyCtx; gameState: GameState }) {
+  const players: Player[] = ['white', 'black']
+  const isSpy = gameState.mode === 'spy'
+  if (!isSpy) return null
+  return (
+    <div className="flex items-center justify-center gap-6 px-4 py-1.5 rounded-lg border border-red-900/40 bg-red-950/20 text-xs">
+      {players.map(p => (
+        <div key={p} className="flex items-center gap-1.5">
+          <span>{p === 'white' ? '⬜' : '⬛'}</span>
+          <span className="text-stone-400">{p === 'white' ? 'White' : 'Black'}:</span>
+          {Array.from({ length: 3 }).map((_, i) => (
+            <span key={i} className={i < spyCtx.tokensRemaining[p] ? 'text-red-400' : 'text-stone-700'}>
+              🕵️
+            </span>
+          ))}
+          <span className={spyCtx.tokensRemaining[p] > 0 ? 'text-red-300 font-bold' : 'text-stone-600'}>
+            ×{spyCtx.tokensRemaining[p]}
+          </span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function ChallengeWindow({ spyCtx, currentPlayer, isBot, onChallenge, onClose }: {
+  spyCtx: SpyCtx
+  currentPlayer: Player
+  isBot: boolean
+  onChallenge: () => void
+  onClose: () => void
+}) {
+  const [remaining, setRemaining] = useState(5)
+  useEffect(() => {
+    if (!spyCtx.challengeExpires) return
+    const tick = setInterval(() => {
+      const left = Math.max(0, Math.ceil((spyCtx.challengeExpires! - Date.now()) / 1000))
+      setRemaining(left)
+      if (left <= 0) { clearInterval(tick); onClose() }
+    }, 100)
+    return () => clearInterval(tick)
+  }, [spyCtx.challengeExpires, onClose])
+
+  const mover = spyCtx.lastMove?.mover
+  const challenger = mover === 'white' ? 'black' : 'white'
+  const isMover = currentPlayer === mover
+
+  // Bot games: challenger is the human (not bot color)
+  if (isBot && !isMover) return null  // bot challenges automatically, human only shown if they're the challenger
+
+  return (
+    <div className="fixed inset-0 z-30 flex items-end justify-center pb-24 pointer-events-none">
+      <div className="flex flex-col items-center gap-3 px-8 py-5 rounded-2xl border border-red-700/60 pointer-events-auto"
+        style={{ background: 'linear-gradient(135deg,#1a0505,#2d0a0a)' }}>
+        <div className="text-sm text-stone-400">
+          <span className={mover === 'white' ? 'text-amber-200 font-bold' : 'text-stone-300 font-bold'}>
+            {mover === 'white' ? 'White' : 'Black'}
+          </span> just moved
+          {isMover
+            ? ' — waiting for opponent to challenge…'
+            : ` — do you want to challenge this move?`
+          }
+        </div>
+
+        {/* Countdown bar */}
+        <div className="w-64 h-2 rounded-full bg-stone-800 overflow-hidden">
+          <div
+            className="h-full rounded-full bg-red-500 transition-all"
+            style={{ width: `${(remaining / 5) * 100}%` }}
+          />
+        </div>
+        <div className="text-xs text-stone-500">{remaining}s remaining</div>
+
+        {!isMover && (
+          <div className="flex gap-3">
+            <button
+              onClick={onChallenge}
+              className="px-6 py-2.5 rounded-xl font-bold text-white text-sm border border-red-500
+                bg-gradient-to-b from-red-600 to-red-800 hover:from-red-500 hover:to-red-700
+                active:scale-95 transition-all shadow-lg shadow-red-900/50"
+            >
+              ⚡ Challenge!
+            </button>
+            <button
+              onClick={onClose}
+              className="px-4 py-2.5 rounded-xl font-semibold text-stone-400 text-sm border border-stone-700
+                bg-stone-900/50 hover:border-stone-500 hover:text-stone-200 transition-colors"
+            >
+              Skip
+            </button>
+          </div>
+        )}
+
+        {isMover && (
+          <div className="text-xs text-red-400/60 italic">
+            {challenger === 'white' ? 'White' : 'Black'} can challenge your move
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function SpyResultToast({ result, onDone }: { result: 'caught' | 'missed'; onDone: () => void }) {
+  useEffect(() => {
+    const t = setTimeout(onDone, 2500)
+    return () => clearTimeout(t)
+  }, [onDone])
+
+  return (
+    <div className="fixed top-20 left-1/2 -translate-x-1/2 z-50 pointer-events-none">
+      <div className={[
+        'px-6 py-3 rounded-xl border font-bold text-sm text-center shadow-2xl',
+        result === 'caught'
+          ? 'border-red-500/60 bg-red-950/90 text-red-300'
+          : 'border-green-600/60 bg-green-950/90 text-green-300',
+      ].join(' ')}>
+        {result === 'caught'
+          ? '🚨 Illegal move caught! Piece sent to bar.'
+          : '✅ Legal move — challenge failed!'}
+      </div>
+    </div>
+  )
+}
+
 // ── Chat sidebar ──────────────────────────────────────────────────────────────
 
 const QUICK = ['gg', 'nice move!', 'brb', 'good luck']
@@ -341,9 +467,11 @@ export default function GamePage() {
   const {
     gameState, gameType, selectedPoint, isRolling, isBotThinking,
     botLevel, botColor, onlineCtx, chatMessages, eloChange, quantumCtx, collapsedBranch,
+    spyCtx, spyResult,
     rollDice, selectPoint, moveTo, clearSelection,
-    setBotThinking, applyBotState, setOnlineGame, receiveOnlineState,
+    setBotThinking, applyBotState, applyBotSpyMove, setOnlineGame, receiveOnlineState,
     setEloChange, addChat, reset, clearCollapsedBranch,
+    challenge, closeChallengeWindow, clearSpyResult,
   } = useGameStore()
 
   const wsRef = useRef<WebSocket | null>(null)
@@ -408,12 +536,18 @@ export default function GamePage() {
   }, [roomId, token])
 
   // ── Bot automation ────────────────────────────────────────────────────────
-  // NOTE: gameState?.phase intentionally excluded from deps — including it would
-  // cancel the bot mid-turn when it updates the phase to 'moving' via applyBotState.
+  // Fires on: current_player change (normal turns), phase change (spy continuation),
+  // and challengeWindowOpen change (spy: continue after window closes).
 
   useEffect(() => {
     if (gameType !== 'bot' || !botColor || !botLevel || !gameState) return
-    if (gameState.phase !== 'waiting_roll' || gameState.current_player !== botColor) return
+
+    const shouldStartTurn = gameState.phase === 'waiting_roll' && gameState.current_player === botColor
+    // Spy continuation: challenge window just closed, dice still remain
+    const isSpyContinuation = gameState.mode === 'spy' && !spyCtx?.challengeWindowOpen &&
+      gameState.phase === 'moving' && gameState.current_player === botColor && gameState.valid_moves.length > 0
+
+    if (!shouldStartTurn && !isSpyContinuation) return
 
     let cancelled = false
     setBotThinking(true)
@@ -421,19 +555,41 @@ export default function GamePage() {
     async function runBot() {
       let state = gameState!
 
-      await delay(600 + Math.random() * 400)
-      if (cancelled) return
+      if (shouldStartTurn) {
+        await delay(600 + Math.random() * 400)
+        if (cancelled) return
 
-      const dice = localRollDice()
-      state = { ...state, dice, phase: 'moving' }
-      state.valid_moves = getValidMoves(state)
-      if (!state.valid_moves.length) {
-        applyBotState(advanceTurn(state))
-        setBotThinking(false)
-        return
+        const dice = localRollDice()
+        state = { ...state, dice, phase: 'moving' }
+        state.valid_moves = getValidMoves(state)
+        if (!state.valid_moves.length) {
+          applyBotState(advanceTurn(state))
+          setBotThinking(false)
+          return
+        }
+        applyBotState(state)
       }
-      applyBotState(state)
 
+      // Spy mode: attempt one illegal move at the start of the move sequence
+      if (state.mode === 'spy') {
+        const currentSpyCtx = useGameStore.getState().spyCtx
+        if (currentSpyCtx && currentSpyCtx.tokensRemaining[botColor!] > 0) {
+          const spyDest = botChooseSpyMove(state, botLevel!)
+          if (spyDest !== null) {
+            const move = botChooseMove(state, botLevel!)
+            if (move) {
+              await delay(500 + Math.random() * 600)
+              if (cancelled) return
+              const spyState = applySpyMove(state, move.from_pos, spyDest)
+              applyBotSpyMove(spyState, botColor!, spyDest, true)
+              setBotThinking(false)
+              return  // human challenge window will handle the rest
+            }
+          }
+        }
+      }
+
+      // Legal moves
       while (!cancelled && state.phase === 'moving' && state.current_player === botColor && state.valid_moves.length) {
         await delay(500 + Math.random() * 600)
         if (cancelled) return
@@ -449,7 +605,24 @@ export default function GamePage() {
     runBot()
     return () => { cancelled = true }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gameState?.current_player, gameType, botColor])
+  }, [gameState?.current_player, gameState?.phase, spyCtx?.challengeWindowOpen, gameType, botColor])
+
+  // ── Bot spy challenge automation ──────────────────────────────────────────
+
+  useEffect(() => {
+    if (gameType !== 'bot' || !spyCtx?.challengeWindowOpen || !botColor || !botLevel) return
+    const mover = spyCtx.lastMove?.mover
+    if (mover === botColor) return  // bot made the move; human decides
+    const timer = setTimeout(() => {
+      if (botShouldChallenge(spyCtx, botLevel)) {
+        challenge()
+      } else {
+        closeChallengeWindow()
+      }
+    }, 500 + Math.random() * 500)
+    return () => clearTimeout(timer)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [spyCtx?.challengeWindowOpen, gameType, botColor, botLevel])
 
   // ── Quantum collapse visual feedback ──────────────────────────────────────
 
@@ -574,6 +747,9 @@ export default function GamePage() {
           {/* Quantum status bar */}
           {quantumCtx && <QuantumStatusBar ctx={quantumCtx} />}
 
+          {/* Spy token bar */}
+          {spyCtx && <SpyTokenBar spyCtx={spyCtx} gameState={gameState} />}
+
           {/* Status line */}
           <div className="text-sm text-stone-400 h-5">
             {isBotThinking && <span className="text-amber-400">Bot is thinking…</span>}
@@ -598,6 +774,7 @@ export default function GamePage() {
               onSelectPoint={selectPoint}
               onMoveToPoint={effectiveMove}
               ghostBranches={ghostBranches}
+              spyCtx={spyCtx}
             />
           </div>
 
@@ -605,7 +782,7 @@ export default function GamePage() {
           <Dice
             dice={gameState.dice}
             onRoll={effectiveRoll}
-            canRoll={canRoll && !isBotThinking && quantumCtx?.phase !== 'building'}
+            canRoll={canRoll && !isBotThinking && quantumCtx?.phase !== 'building' && !spyCtx?.challengeWindowOpen}
             isRolling={isRolling}
           />
         </div>
@@ -637,6 +814,20 @@ export default function GamePage() {
           branch={collapsedBranch}
           onDone={() => { setShowCollapse(false); clearCollapsedBranch() }}
         />
+      )}
+
+      {spyCtx?.challengeWindowOpen && (
+        <ChallengeWindow
+          spyCtx={spyCtx}
+          currentPlayer={gameState.current_player}
+          isBot={gameType === 'bot'}
+          onChallenge={challenge}
+          onClose={closeChallengeWindow}
+        />
+      )}
+
+      {spyResult && (
+        <SpyResultToast result={spyResult} onDone={clearSpyResult} />
       )}
     </div>
   )

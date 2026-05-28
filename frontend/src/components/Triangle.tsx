@@ -6,6 +6,7 @@ interface TriangleProps {
   pointState: PointState
   orientation: 'up' | 'down'
   isHighlighted: boolean
+  isSpyHighlighted?: boolean  // Spy mode: illegal destination (red)
   isSelected: boolean
   onSelect: () => void
   onMove: () => void
@@ -14,6 +15,7 @@ interface TriangleProps {
   ghostA?: number   // Ghost checker count for quantum Branch A
   ghostB?: number   // Ghost checker count for quantum Branch B
   ghostPlayer?: Player  // Which player's pieces are ghosts
+  locked?: boolean  // Board locked during challenge window
 }
 
 const TRIANGLE_COLORS = ['bg-red-700', 'bg-stone-200']
@@ -25,6 +27,7 @@ export default function Triangle({
   pointState,
   orientation,
   isHighlighted,
+  isSpyHighlighted,
   isSelected,
   onSelect,
   onMove,
@@ -33,6 +36,7 @@ export default function Triangle({
   ghostA,
   ghostB,
   ghostPlayer,
+  locked,
 }: TriangleProps) {
   const colorIndex = index % 2
   const baseColor = TRIANGLE_COLORS[colorIndex]
@@ -44,7 +48,8 @@ export default function Triangle({
   const isOwnChecker = pointState.player === currentPlayer && pointState.count > 0
 
   function handleClick() {
-    if (isHighlighted && selectedPoint !== null) {
+    if (locked) return
+    if ((isHighlighted || isSpyHighlighted) && selectedPoint !== null) {
       onMove()
     } else if (isOwnChecker) {
       onSelect()
@@ -60,7 +65,7 @@ export default function Triangle({
     <div
       className={[
         'relative w-full h-full',
-        isHighlighted || isOwnChecker ? 'cursor-pointer' : 'cursor-default',
+        locked ? 'cursor-not-allowed' : (isHighlighted || isSpyHighlighted || isOwnChecker ? 'cursor-pointer' : 'cursor-default'),
       ].join(' ')}
       onClick={handleClick}
     >
@@ -68,16 +73,24 @@ export default function Triangle({
       <div
         className={[
           'absolute inset-0 transition-colors duration-150',
-          isHighlighted ? 'bg-green-500 opacity-80' : `${baseColor} opacity-90`,
+          isHighlighted ? 'bg-green-500 opacity-80'
+            : isSpyHighlighted ? 'bg-red-600 opacity-70'
+            : `${baseColor} opacity-90`,
         ].join(' ')}
         style={{ clipPath: clip }}
       />
 
-      {/* Highlight pulse */}
+      {/* Highlight pulse — green for legal, red for spy */}
       {isHighlighted && (
         <div
           className="absolute inset-0 highlight-pulse opacity-30"
           style={{ clipPath: clip, backgroundColor: '#4ade80' }}
+        />
+      )}
+      {isSpyHighlighted && (
+        <div
+          className="absolute inset-0 highlight-pulse opacity-20"
+          style={{ clipPath: clip, backgroundColor: '#dc2626' }}
         />
       )}
 

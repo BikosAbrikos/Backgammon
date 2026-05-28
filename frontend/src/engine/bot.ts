@@ -1,4 +1,4 @@
-import type { GameState, MoveOption, Player } from '../store/gameStore'
+import type { GameState, MoveOption, Player, SpyCtx } from '../store/gameStore'
 import { getValidMoves } from './rules'
 import { applyMove } from './moves'
 
@@ -105,6 +105,47 @@ export function botChooseMove(state: GameState, level: BotLevel): MoveOption | n
     if (s > bestScore) { bestScore = s; bestMove = m }
   }
   return bestMove
+}
+
+// Returns true if the bot should challenge the last move in spy mode
+export function botShouldChallenge(spyCtx: SpyCtx, level: BotLevel): boolean {
+  if (!spyCtx.lastMove) return false
+  const { wasIllegal } = spyCtx.lastMove
+  const rand = Math.random()
+  if (level === 'beginner') return wasIllegal ? rand < 0.40 : false
+  if (level === 'medium')   return wasIllegal ? rand < 0.70 : rand < 0.05
+  /* advanced */             return wasIllegal ? rand < 0.90 : false
+}
+
+// Returns an illegal destination point for the bot to play a spy move to, or null if not cheating
+export function botChooseSpyMove(state: GameState, level: BotLevel): number | null {
+  const rand = Math.random()
+  const cheatChance = level === 'beginner' ? 0 : level === 'medium' ? 0.15 : 0.25
+  if (rand >= cheatChance) return null
+
+  const player = state.current_player
+  const legal = new Set(state.valid_moves.map(m => m.to_pos))
+
+  // Collect illegal destinations: all 24 points not already a legal move
+  const illegal: number[] = []
+  for (let i = 0; i < 24; i++) {
+    if (!legal.has(i)) illegal.push(i)
+  }
+  if (!illegal.length) return null
+
+  if (level === 'medium') {
+    return illegal[Math.floor(Math.random() * illegal.length)]
+  }
+
+  // Advanced: pick the illegal destination that best advances the bot (lowest pip after move)
+  let bestScore = -Infinity
+  let bestDest = illegal[0]
+  for (const dest of illegal) {
+    const dir = player === 'white' ? -1 : 1
+    const advancement = dir * dest
+    if (advancement > bestScore) { bestScore = advancement; bestDest = dest }
+  }
+  return bestDest
 }
 
 export function delay(ms: number): Promise<void> {

@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import type { GameState, Player, PointState, QuantumBranchPositions } from '../store/gameStore'
+import type { GameState, Player, PointState, QuantumBranchPositions, SpyCtx } from '../store/gameStore'
 import Triangle from './Triangle'
 import Checker from './Checker'
 
@@ -13,6 +13,7 @@ interface BoardProps {
     branchB: QuantumBranchPositions
     quantumPlayer: Player
   }
+  spyCtx?: SpyCtx | null
 }
 
 // Visual layout:
@@ -106,8 +107,10 @@ function BearOffZone({
   )
 }
 
-export default function Board({ gameState, selectedPoint, onSelectPoint, onMoveToPoint, ghostBranches }: BoardProps) {
+export default function Board({ gameState, selectedPoint, onSelectPoint, onMoveToPoint, ghostBranches, spyCtx }: BoardProps) {
   const { board, current_player, valid_moves } = gameState
+
+  const locked = spyCtx?.challengeWindowOpen ?? false
 
   const validDests = useMemo<Set<number | 'off'>>(() => {
     if (selectedPoint === null) return new Set()
@@ -117,6 +120,18 @@ export default function Board({ gameState, selectedPoint, onSelectPoint, onMoveT
         .map(m => m.to_pos)
     )
   }, [selectedPoint, valid_moves])
+
+  // Spy mode: red-highlighted illegal destinations (all board points not in validDests)
+  const spyDests = useMemo<Set<number>>(() => {
+    if (selectedPoint === null) return new Set()
+    if (!spyCtx || spyCtx.tokensRemaining[current_player] <= 0) return new Set()
+    if (spyCtx.challengeWindowOpen) return new Set()
+    const all = new Set<number>()
+    for (let i = 0; i < 24; i++) {
+      if (!validDests.has(i)) all.add(i)
+    }
+    return all
+  }, [selectedPoint, spyCtx, current_player, validDests])
 
   const canBearOffWhite = validDests.has('off') && current_player === 'white'
   const canBearOffBlack = validDests.has('off') && current_player === 'black'
@@ -153,6 +168,7 @@ export default function Board({ gameState, selectedPoint, onSelectPoint, onMoveT
               pointState={displayPt}
               orientation={orientation}
               isHighlighted={validDests.has(i)}
+              isSpyHighlighted={spyDests.has(i)}
               isSelected={selectedPoint === i}
               onSelect={() => onSelectPoint(i)}
               onMove={() => onMoveToPoint(i)}
@@ -161,6 +177,7 @@ export default function Board({ gameState, selectedPoint, onSelectPoint, onMoveT
               ghostA={ghostA > 0 ? ghostA : undefined}
               ghostB={ghostB > 0 ? ghostB : undefined}
               ghostPlayer={ghostBranches?.quantumPlayer}
+              locked={locked}
             />
           )
         })}
@@ -175,6 +192,7 @@ export default function Board({ gameState, selectedPoint, onSelectPoint, onMoveT
               pointState={displayPt}
               orientation={orientation}
               isHighlighted={validDests.has(i)}
+              isSpyHighlighted={spyDests.has(i)}
               isSelected={selectedPoint === i}
               onSelect={() => onSelectPoint(i)}
               onMove={() => onMoveToPoint(i)}
@@ -183,6 +201,7 @@ export default function Board({ gameState, selectedPoint, onSelectPoint, onMoveT
               ghostA={ghostA > 0 ? ghostA : undefined}
               ghostB={ghostB > 0 ? ghostB : undefined}
               ghostPlayer={ghostBranches?.quantumPlayer}
+              locked={locked}
             />
           )
         })}

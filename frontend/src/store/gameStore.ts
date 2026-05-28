@@ -2,14 +2,14 @@ import { create } from 'zustand'
 import axios from 'axios'
 import { rollDice as localRollDice } from '../engine/dice'
 import { getValidMoves } from '../engine/rules'
-import { applyMove, advanceTurn } from '../engine/moves'
+import { applyMove, applySpyMove, advanceTurn } from '../engine/moves'
 import type { BotLevel } from '../engine/bot'
 
 const API_BASE = import.meta.env.VITE_API_URL ?? ''
 const api = axios.create({ baseURL: API_BASE })
 
 export type Player = 'white' | 'black'
-export type GameMode = 'long' | 'short' | 'quantum'
+export type GameMode = 'long' | 'short' | 'quantum' | 'spy'
 export type Phase = 'waiting_roll' | 'moving' | 'game_over'
 export type GameType = 'local' | 'bot' | 'online'
 
@@ -72,6 +72,19 @@ export interface QuantumCtx {
   branchAMoves: MoveOption[]
   /** Random moves the system generated (Branch B) */
   branchBMoves: MoveOption[]
+}
+
+// ── Spy Backgammon ─────────────────────────────────────────────────────────────
+
+export interface SpyCtx {
+  tokensRemaining: Record<Player, number>  // 3 each at start
+  lastMove: {
+    mover: Player
+    dest: number  // board point the piece landed on (to undo on challenge)
+    wasIllegal: boolean
+  } | null
+  challengeWindowOpen: boolean
+  challengeExpires: number | null  // epoch ms
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -158,6 +171,8 @@ interface GameStore {
 
   quantumCtx: QuantumCtx | null
   collapsedBranch: 'A' | 'B' | null
+  spyCtx: SpyCtx | null
+  spyResult: 'caught' | 'missed' | null  // brief toast message
 
   // Starters
   startLocalGame: (mode: GameMode) => Promise<void>
@@ -176,9 +191,15 @@ interface GameStore {
   enterQuantumMode: () => void
   clearCollapsedBranch: () => void
 
+  // Spy
+  challenge: () => void
+  closeChallengeWindow: () => void
+  clearSpyResult: () => void
+
   // Bot automation
   setBotThinking: (v: boolean) => void
   applyBotState: (state: GameState) => void
+  applyBotSpyMove: (state: GameState, mover: Player, dest: number, wasIllegal: boolean) => void
 
   // Chat
   addChat: (msg: ChatMessage) => void
@@ -199,9 +220,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
   eloChange: null,
   quantumCtx: null,
   collapsedBranch: null,
+  spyCtx: null,
+  spyResult: null,
 
   startLocalGame: async (mode) => {
-    const backendMode = mode === 'quantum' ? 'short' : mode
+    const backendMode = (mode === 'quantum' || mode === 'spy') ? 'short' : mode
     const { data } = await api.post<GameState>('/game/new', { mode: backendMode })
     set({
       gameState: { ...data, mode },
@@ -213,11 +236,13 @@ export const useGameStore = create<GameStore>((set, get) => ({
       chatMessages: [],
       eloChange: null,
       quantumCtx: null,
+      spyCtx: mode === 'spy' ? { tokensRemaining: { white: 3, black: 3 }, lastMove: null, challengeWindowOpen: false, challengeExpires: null } : null,
+      spyResult: null,
     })
   },
 
   startBotGame: async (mode, level, botColor) => {
-    const backendMode = mode === 'quantum' ? 'short' : mode
+    const backendMode = (mode === 'quantum' || mode === 'spy') ? 'short' : mode
     const { data } = await api.post<GameState>('/game/new', { mode: backendMode })
     set({
       gameState: { ...data, mode },
@@ -229,6 +254,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
       chatMessages: [],
       eloChange: null,
       quantumCtx: null,
+      spyCtx: mode === 'spy' ? { tokensRemaining: { white: 3, black: 3 }, lastMove: null, challengeWindowOpen: false, challengeExpires: null } : null,
+      spyResult: null,
     })
   },
 
@@ -292,14 +319,20 @@ export const useGameStore = create<GameStore>((set, get) => ({
   },
 
   selectPoint: (point) => {
-    const { gameState, selectedPoint, gameType, onlineCtx, botColor } = get()
+    const { gameState, selectedPoint, gameType, onlineCtx, botColor, spyCtx } = get()
     if (!gameState || gameState.phase !== 'moving') return
 
     // Security: block interacting with opponent's turn
     if (gameType === 'online' && onlineCtx && gameState.current_player !== onlineCtx.myColor) return
     if (gameType === 'bot' && botColor && gameState.current_player === botColor) return
 
+    // Block all interaction during challenge window
+    if (spyCtx?.challengeWindowOpen) return
+
     if (selectedPoint === point) { set({ selectedPoint: null }); return }
+
+    const isSpy = gameState.mode === 'spy'
+    const hasSpyTokens = isSpy && spyCtx !== null && spyCtx.tokensRemaining[gameState.current_player] > 0
 
     if (selectedPoint !== null) {
       const dests = gameState.valid_moves
@@ -309,27 +342,64 @@ export const useGameStore = create<GameStore>((set, get) => ({
         get().moveTo(point as number)
         return
       }
+      // In spy mode with tokens: allow moving to any board point (illegal spy move)
+      if (hasSpyTokens && typeof point === 'number') {
+        get().moveTo(point as number)
+        return
+      }
     }
 
     if (point === 'bar') {
-      if (gameState.bar[gameState.current_player] > 0 &&
-        gameState.valid_moves.some(m => m.from_pos === 'bar')) {
-        set({ selectedPoint: 'bar' })
+      // In spy mode: can select bar even if no valid moves (if has tokens)
+      if (gameState.bar[gameState.current_player] > 0) {
+        if (gameState.valid_moves.some(m => m.from_pos === 'bar') || hasSpyTokens) {
+          set({ selectedPoint: 'bar' })
+        }
       }
     } else {
       const p = gameState.board[point as number]
-      if (p.player === gameState.current_player && p.count > 0 &&
-        gameState.valid_moves.some(m => m.from_pos === point)) {
-        set({ selectedPoint: point })
+      if (p.player === gameState.current_player && p.count > 0) {
+        // In spy mode: allow selecting any own piece (even without valid moves from it)
+        if (gameState.valid_moves.some(m => m.from_pos === point) || hasSpyTokens) {
+          set({ selectedPoint: point })
+        }
       }
     }
   },
 
   moveTo: (to) => {
-    const { selectedPoint, gameState, gameType, botColor, quantumCtx } = get()
+    const { selectedPoint, gameState, gameType, botColor, quantumCtx, spyCtx } = get()
     if (selectedPoint === null || !gameState) return
     if (gameType === 'online') return
     if (gameType === 'bot' && botColor && gameState.current_player === botColor) return
+    if (spyCtx?.challengeWindowOpen) return
+
+    // ── Spy move handling ──────────────────────────────────────────────────────
+    if (gameState.mode === 'spy' && spyCtx !== null && typeof to === 'number') {
+      const isLegal = gameState.valid_moves.some(
+        m => String(m.from_pos) === String(selectedPoint) && String(m.to_pos) === String(to)
+      )
+      const hasTokens = spyCtx.tokensRemaining[gameState.current_player] > 0
+
+      if (!isLegal && !hasTokens) {
+        // No tokens — block the spy move silently
+        set({ selectedPoint: null })
+        return
+      }
+
+      const next = isLegal
+        ? applyMove(gameState, selectedPoint, to)
+        : applySpyMove(gameState, selectedPoint, to)
+
+      const newSpyCtx: SpyCtx = {
+        ...spyCtx,
+        lastMove: { mover: gameState.current_player, dest: to, wasIllegal: !isLegal },
+        challengeWindowOpen: true,
+        challengeExpires: Date.now() + 5000,
+      }
+      set({ gameState: next, selectedPoint: null, spyCtx: newSpyCtx })
+      return
+    }
 
     const next = applyMove(gameState, selectedPoint, to)
 
@@ -387,13 +457,71 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
   clearCollapsedBranch: () => set({ collapsedBranch: null }),
   clearSelection: () => set({ selectedPoint: null }),
+
+  challenge: () => {
+    const { spyCtx, gameState } = get()
+    if (!spyCtx?.challengeWindowOpen || !spyCtx.lastMove || !gameState) return
+
+    const { lastMove } = spyCtx
+    let nextState = JSON.parse(JSON.stringify(gameState)) as GameState
+
+    if (lastMove.wasIllegal) {
+      // Caught! Send the piece from dest back to mover's bar
+      const dest = nextState.board[lastMove.dest]
+      if (dest.player === lastMove.mover && dest.count > 0) {
+        dest.count--
+        if (dest.count === 0) dest.player = null
+        nextState.bar[lastMove.mover]++
+      }
+      // Deduct token and end turn
+      const newTokens = { ...spyCtx.tokensRemaining, [lastMove.mover]: spyCtx.tokensRemaining[lastMove.mover] - 1 }
+      nextState = advanceTurn(nextState)
+      set({
+        gameState: nextState,
+        spyCtx: { ...spyCtx, tokensRemaining: newTokens, lastMove: null, challengeWindowOpen: false, challengeExpires: null },
+        spyResult: 'caught',
+      })
+    } else {
+      // False challenge — move was legal, nothing happens
+      // If no dice left, advance turn; else player continues
+      const shouldAdvance = !nextState.dice.remaining.length || !nextState.valid_moves.length
+      set({
+        gameState: shouldAdvance ? advanceTurn(nextState) : nextState,
+        spyCtx: { ...spyCtx, lastMove: null, challengeWindowOpen: false, challengeExpires: null },
+        spyResult: 'missed',
+      })
+    }
+  },
+
+  closeChallengeWindow: () => {
+    const { spyCtx, gameState } = get()
+    if (!spyCtx || !gameState) return
+    // Timer expired — move stands. Advance turn if no dice left.
+    const shouldAdvance = !gameState.dice.remaining.length || !gameState.valid_moves.length
+    set({
+      gameState: shouldAdvance ? advanceTurn(gameState) : gameState,
+      spyCtx: { ...spyCtx, lastMove: null, challengeWindowOpen: false, challengeExpires: null },
+    })
+  },
+
+  clearSpyResult: () => set({ spyResult: null }),
   setBotThinking: (v) => set({ isBotThinking: v }),
   applyBotState: (state) => set({ gameState: state }),
+  applyBotSpyMove: (state, mover, dest, wasIllegal) => {
+    const { spyCtx } = get()
+    if (!spyCtx) return
+    set({
+      gameState: state,
+      spyCtx: { ...spyCtx, lastMove: { mover, dest, wasIllegal }, challengeWindowOpen: true, challengeExpires: Date.now() + 5000 },
+    })
+  },
   addChat: (msg) => set(s => ({ chatMessages: [...s.chatMessages.slice(-99), msg] })),
 
   reset: () => set({
     gameState: null, selectedPoint: null, isRolling: false,
     botLevel: null, botColor: null, isBotThinking: false,
-    onlineCtx: null, chatMessages: [], eloChange: null, quantumCtx: null, collapsedBranch: null,
+    onlineCtx: null, chatMessages: [], eloChange: null,
+    quantumCtx: null, collapsedBranch: null,
+    spyCtx: null, spyResult: null,
   }),
 }))
