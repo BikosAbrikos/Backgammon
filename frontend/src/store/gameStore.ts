@@ -9,7 +9,7 @@ const API_BASE = import.meta.env.VITE_API_URL ?? ''
 const api = axios.create({ baseURL: API_BASE })
 
 export type Player = 'white' | 'black'
-export type GameMode = 'long' | 'short'
+export type GameMode = 'long' | 'short' | 'quantum'
 export type Phase = 'waiting_roll' | 'moving' | 'game_over'
 export type GameType = 'local' | 'bot' | 'online'
 
@@ -180,9 +180,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
   quantumCtx: null,
 
   startLocalGame: async (mode) => {
-    const { data } = await api.post<GameState>('/game/new', { mode })
+    const backendMode = mode === 'quantum' ? 'short' : mode
+    const { data } = await api.post<GameState>('/game/new', { mode: backendMode })
     set({
-      gameState: data,
+      gameState: { ...data, mode },
       gameType: 'local',
       selectedPoint: null,
       botLevel: null,
@@ -195,9 +196,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
   },
 
   startBotGame: async (mode, level, botColor) => {
-    const { data } = await api.post<GameState>('/game/new', { mode })
+    const backendMode = mode === 'quantum' ? 'short' : mode
+    const { data } = await api.post<GameState>('/game/new', { mode: backendMode })
     set({
-      gameState: data,
+      gameState: { ...data, mode },
       gameType: 'bot',
       botLevel: level,
       botColor,
@@ -249,7 +251,19 @@ export const useGameStore = create<GameStore>((set, get) => ({
     next.valid_moves = getValidMoves(next)
     if (!next.valid_moves.length) next = advanceTurn(next)
 
-    set({ isRolling: true, gameState: next, selectedPoint: null })
+    // Auto-enter quantum mode when this is a quantum game and the player has moves
+    let autoQuantumCtx: QuantumCtx | null = null
+    if (next.mode === 'quantum' && next.phase === 'moving') {
+      autoQuantumCtx = {
+        phase: 'building_a',
+        quantumPlayer: next.current_player,
+        preQuantumState: next,
+        branchA: null,
+        branchB: null,
+      }
+    }
+
+    set({ isRolling: true, gameState: next, selectedPoint: null, quantumCtx: autoQuantumCtx })
     setTimeout(() => set({ isRolling: false }), 520)
   },
 

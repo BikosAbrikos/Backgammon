@@ -257,7 +257,7 @@ export default function GamePage() {
     botLevel, botColor, onlineCtx, chatMessages, eloChange, quantumCtx,
     rollDice, selectPoint, moveTo, clearSelection,
     setBotThinking, applyBotState, setOnlineGame, receiveOnlineState,
-    setEloChange, addChat, reset, enterQuantumMode,
+    setEloChange, addChat, reset,
   } = useGameStore()
 
   const wsRef = useRef<WebSocket | null>(null)
@@ -419,13 +419,6 @@ export default function GamePage() {
   const effectiveRoll = isOnline ? onlineRoll : rollDice
   const effectiveMove = isOnline ? onlineMove : moveTo
 
-  // Quantum: can enter quantum mode if it's the player's moving phase (no moves made yet, not online/bot-turn)
-  const canEnterQuantum = !isOnline && !isBotTurn && !quantumCtx &&
-    gameState.phase === 'moving' &&
-    gameState.dice.values.length === 2 &&
-    gameState.dice.remaining.length === (
-      gameState.dice.values[0] === gameState.dice.values[1] ? 4 : 2
-    )
 
   // Ghost branches to pass to Board during opponent's turn
   const ghostBranches = quantumCtx?.phase === 'opponent' &&
@@ -524,25 +517,13 @@ export default function GamePage() {
             />
           </div>
 
-          {/* Dice + quantum button row */}
-          <div className="flex flex-col items-center gap-2">
-            <Dice
-              dice={gameState.dice}
-              onRoll={effectiveRoll}
-              canRoll={canRoll && !isBotThinking}
-              isRolling={isRolling}
-            />
-            {canEnterQuantum && (
-              <button
-                onClick={enterQuantumMode}
-                className="px-5 py-2 rounded-xl border border-cyan-600/60 bg-cyan-900/30
-                  text-cyan-300 text-sm font-semibold hover:bg-cyan-900/50 hover:border-cyan-500
-                  transition-all duration-150"
-              >
-                ⚛️ Quantum Mode
-              </button>
-            )}
-          </div>
+          {/* Dice */}
+          <Dice
+            dice={gameState.dice}
+            onRoll={effectiveRoll}
+            canRoll={canRoll && !isBotThinking && !quantumCtx}
+            isRolling={isRolling}
+          />
         </div>
 
         {/* Chat (online only) */}

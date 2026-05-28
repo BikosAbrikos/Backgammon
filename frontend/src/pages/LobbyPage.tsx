@@ -45,6 +45,77 @@ function ModeSelect({ label, value, onChange }: { label: string; value: GameMode
   )
 }
 
+// ── Quantum modal ─────────────────────────────────────────────────────────────
+
+function QuantumModal({ onClose }: { onClose: () => void }) {
+  const [opponent, setOpponent] = useState<'bot' | 'local'>('bot')
+  const [level, setLevel] = useState<BotLevel>('medium')
+  const [loading, setLoading] = useState(false)
+  const { startBotGame, startLocalGame } = useGameStore()
+  const navigate = useNavigate()
+
+  async function start() {
+    setLoading(true)
+    if (opponent === 'bot') {
+      await startBotGame('quantum', level, 'black')
+    } else {
+      await startLocalGame('quantum')
+    }
+    navigate('/game')
+    onClose()
+  }
+
+  return (
+    <Modal title="⚛️ Quantum Backgammon" onClose={onClose}>
+      {/* Explanation */}
+      <div className="text-xs text-stone-500 leading-relaxed border border-cyan-900/40 bg-cyan-900/10 rounded-lg p-3">
+        Each turn you play <span className="text-cyan-300 font-semibold">two move branches</span> with the same dice.
+        Your opponent sees both as ghost overlays. After their turn,
+        one branch <span className="text-cyan-300 font-semibold">collapses at random</span> — 50 / 50.
+      </div>
+
+      {/* Opponent type */}
+      <div className="flex flex-col gap-1.5">
+        <label className="text-stone-400 text-xs font-semibold uppercase tracking-wider">Play Against</label>
+        <div className="flex gap-2">
+          {(['bot', 'local'] as const).map(o => (
+            <button key={o} onClick={() => setOpponent(o)}
+              className={['flex-1 py-2 rounded-lg border text-sm font-semibold transition-colors',
+                opponent === o
+                  ? 'border-cyan-500 bg-cyan-900/30 text-cyan-300'
+                  : 'border-stone-700 text-stone-500 hover:border-stone-500'].join(' ')}>
+              {o === 'bot' ? '🤖 Bot' : '🎮 Local 2P'}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Difficulty (bot only) */}
+      {opponent === 'bot' && (
+        <div className="flex flex-col gap-1.5">
+          <label className="text-stone-400 text-xs font-semibold uppercase tracking-wider">Bot Difficulty</label>
+          <div className="flex gap-2">
+            {(['beginner', 'medium', 'advanced'] as BotLevel[]).map(l => (
+              <button key={l} onClick={() => setLevel(l)}
+                className={['flex-1 py-2 rounded-lg border text-xs font-semibold transition-colors',
+                  level === l
+                    ? 'border-cyan-500 bg-cyan-900/30 text-cyan-300'
+                    : 'border-stone-700 text-stone-500 hover:border-stone-500'].join(' ')}>
+                {l === 'beginner' ? '🌱' : l === 'medium' ? '⚔️' : '🔥'} {l}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <button onClick={start} disabled={loading}
+        className="py-3 rounded-xl font-bold text-stone-900 bg-gradient-to-b from-cyan-300 to-cyan-500 border border-cyan-600 hover:from-cyan-200 hover:to-cyan-400 transition-all disabled:opacity-50">
+        {loading ? 'Starting…' : '⚛️ Start Quantum Game'}
+      </button>
+    </Modal>
+  )
+}
+
 // ── Matchmaking modal ─────────────────────────────────────────────────────────
 
 function MatchmakingModal({ onClose }: { onClose: () => void }) {
@@ -256,7 +327,7 @@ function PrivateModal({ onClose }: { onClose: () => void }) {
 
 // ── Lobby page ────────────────────────────────────────────────────────────────
 
-type ModalType = 'ranked' | 'bot' | 'private' | null
+type ModalType = 'ranked' | 'bot' | 'private' | 'quantum' | null
 
 export default function LobbyPage() {
   const [modal, setModal] = useState<ModalType>(null)
@@ -269,10 +340,11 @@ export default function LobbyPage() {
     navigate('/game')
   }
 
-  const CARDS = [
-    { id: 'ranked' as ModalType, icon: '🏆', title: 'Ranked Match', desc: 'Get matched by Elo. Win to climb.', accent: 'amber' },
-    { id: 'bot' as ModalType, icon: '🤖', title: 'vs Bot', desc: 'Beginner, Medium, or Advanced AI.', accent: 'stone' },
-    { id: 'private' as ModalType, icon: '🔗', title: 'Private Room', desc: 'Invite a friend with a code or link.', accent: 'stone' },
+  const CARDS: { id: ModalType; icon: string; title: string; desc: string; accent: string; action?: () => void }[] = [
+    { id: 'ranked', icon: '🏆', title: 'Ranked Match', desc: 'Get matched by Elo. Win to climb.', accent: 'amber' },
+    { id: 'bot', icon: '🤖', title: 'vs Bot', desc: 'Beginner, Medium, or Advanced AI.', accent: 'stone' },
+    { id: 'quantum', icon: '⚛️', title: 'Quantum Mode', desc: 'Two move branches. One collapses at random.', accent: 'cyan' },
+    { id: 'private', icon: '🔗', title: 'Private Room', desc: 'Invite a friend with a code or link.', accent: 'stone' },
     { id: null, icon: '🎮', title: 'Local 2-Player', desc: 'Pass & play on one device.', accent: 'stone', action: playLocal },
   ]
 
@@ -300,12 +372,16 @@ export default function LobbyPage() {
               'transition-all duration-200 hover:scale-[1.02] active:scale-[0.98]',
               card.accent === 'amber'
                 ? 'border-amber-700/60 bg-amber-900/15 hover:border-amber-500 hover:bg-amber-900/25'
+              : card.accent === 'cyan'
+                ? 'border-cyan-800/50 bg-cyan-900/10 hover:border-cyan-600 hover:bg-cyan-900/20'
                 : 'border-stone-700/50 bg-stone-900/30 hover:border-stone-500 hover:bg-stone-800/30',
             ].join(' ')}
           >
             <span className="text-4xl">{card.icon}</span>
             <div>
-              <div className="text-amber-100 font-bold text-lg">{card.title}</div>
+              <div className={['font-bold text-lg', card.accent === 'cyan' ? 'text-cyan-100' : 'text-amber-100'].join(' ')}>
+                {card.title}
+              </div>
               <div className="text-stone-500 text-sm mt-0.5">{card.desc}</div>
             </div>
           </button>
@@ -314,6 +390,7 @@ export default function LobbyPage() {
 
       {modal === 'ranked' && <MatchmakingModal onClose={() => setModal(null)} />}
       {modal === 'bot' && <BotModal onClose={() => setModal(null)} />}
+      {modal === 'quantum' && <QuantumModal onClose={() => setModal(null)} />}
       {modal === 'private' && <PrivateModal onClose={() => setModal(null)} />}
     </div>
   )
