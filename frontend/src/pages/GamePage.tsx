@@ -1,11 +1,14 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useGameStore } from '../store/gameStore'
+import type { GameState, OnlineContext, Player } from '../store/gameStore'
 import { useAuthStore } from '../store/authStore'
+import type { AuthUser } from '../store/authStore'
 import Board from '../components/Board'
 import Dice from '../components/Dice'
 import TopBar from '../components/TopBar'
 import { botChooseMove, delay } from '../engine/bot'
+import type { BotLevel } from '../engine/bot'
 import { rollDice as localRollDice } from '../engine/dice'
 import { getValidMoves } from '../engine/rules'
 import { applyMove, advanceTurn } from '../engine/moves'
@@ -57,11 +60,11 @@ function PlayerPanel({
   gameType, gameState, onlineCtx, botLevel, botColor, user,
 }: {
   gameType: string
-  gameState: NonNullable<ReturnType<typeof useGameStore>['gameState']>
-  onlineCtx: ReturnType<typeof useGameStore>['onlineCtx']
-  botLevel: ReturnType<typeof useGameStore>['botLevel']
-  botColor: ReturnType<typeof useGameStore>['botColor']
-  user: ReturnType<typeof useAuthStore>['user']
+  gameState: GameState
+  onlineCtx: OnlineContext | null
+  botLevel: BotLevel | null
+  botColor: Player | null
+  user: AuthUser | null
 }) {
   const current = gameState.current_player
 
