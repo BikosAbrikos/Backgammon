@@ -482,12 +482,11 @@ export default function GamePage() {
   const [opponentLeft, setOpponentLeft] = useState(false)
   const [showCollapse, setShowCollapse] = useState(false)
 
-  // Reset all game state when the player leaves this page (back button, link click, etc.)
+  // Reset store when the player leaves the page.
+  // WS is NOT closed here — the [roomId, token] effect owns WS lifecycle.
+  // Closing it here as well races with that cleanup and can cause double-close.
   useEffect(() => {
-    return () => {
-      wsRef.current?.close()
-      reset()
-    }
+    return () => { reset() }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -613,7 +612,20 @@ export default function GamePage() {
     }
 
     connect()
-    return () => { cancelled = true; wsRef.current?.close() }
+
+    // Keep the WS alive — proxies / load-balancers terminate idle connections
+    // after 30–60 s; send an application-level ping every 20 s.
+    const pingId = setInterval(() => {
+      if (wsRef.current?.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify({ type: 'ping' }))
+      }
+    }, 20_000)
+
+    return () => {
+      cancelled = true
+      clearInterval(pingId)
+      wsRef.current?.close()
+    }
   }, [roomId, token])
 
   // ── Bot automation ────────────────────────────────────────────────────────

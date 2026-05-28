@@ -260,6 +260,12 @@ function MatchmakingModal({ onClose }: { onClose: () => void }) {
     setStatus('searching')
     setSeconds(0)
 
+    // Keep matchmaking WS alive while waiting in queue
+    const pingId = setInterval(() => {
+      if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'ping' }))
+    }, 20_000)
+    ws.addEventListener('close', () => clearInterval(pingId))
+
     ws.onopen = () => ws.send(JSON.stringify({ type: 'join_queue', mode, token }))
     ws.onmessage = e => {
       const msg = JSON.parse(e.data)

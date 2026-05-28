@@ -74,6 +74,13 @@ async def matchmaking_ws(websocket: WebSocket):
         while True:
             raw = await websocket.receive_text()
             data = json.loads(raw)
+            if data.get("type") == "ping":
+                try:
+                    await websocket.send_text(json.dumps({"type": "pong"}))
+                except Exception:
+                    pass
+                continue
+
             if data.get("type") == "join_queue":
                 user = await _user_from_token(data.get("token", ""))
                 if not user:
@@ -149,6 +156,14 @@ async def game_ws(websocket: WebSocket, room_id: str):
             raw = await websocket.receive_text()
             data = json.loads(raw)
             msg = data.get("type")
+
+            # ── Keep-alive ────────────────────────────────────────────────
+            if msg == "ping":
+                try:
+                    await websocket.send_text(json.dumps({"type": "pong"}))
+                except Exception:
+                    pass
+                continue
 
             # ── Chat ──────────────────────────────────────────────────────
             if msg == "chat":
