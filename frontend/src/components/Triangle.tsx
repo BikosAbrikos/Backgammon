@@ -121,55 +121,46 @@ export default function Triangle({
         </>
       )}
 
-      {/* Quantum ghost checkers — semi-transparent overlays for Branch A (cyan) and Branch B (orange) */}
+      {/* Quantum ghost checkers — stacked above certain pieces, per-branch tints */}
       {hasGhost && ghostPlayer && (() => {
         const isWhiteGhost = ghostPlayer === 'white'
-        const ghostCount = Math.max(ghostA ?? 0, ghostB ?? 0)
-        const visible = Math.min(ghostCount, MAX_STACK)
+        // Start stacking ghosts above whatever certain checkers are already rendered
+        const certainShown = Math.min(pointState.count, MAX_STACK)
+        const maxLevels = Math.max(ghostA ?? 0, ghostB ?? 0)
+        const levels = Math.min(maxLevels, MAX_STACK - certainShown)
+        if (levels <= 0) return null
         return (
           <div className="absolute inset-0 pointer-events-none" style={{ zIndex: 15 }}>
-            {Array.from({ length: visible }).map((_, i) => {
-              const offset = i * STEP
-              const posStyle: React.CSSProperties =
-                orientation === 'up'
-                  ? { bottom: `${6 + offset}px`, zIndex: i }
-                  : { top: `${6 + offset}px`, zIndex: i }
+            {Array.from({ length: levels }).map((_, lvl) => {
+              const offset = (certainShown + lvl) * STEP
+              const posStyle: React.CSSProperties = orientation === 'up'
+                ? { bottom: `${6 + offset}px` }
+                : { top: `${6 + offset}px` }
+              const showA = (ghostA ?? 0) > lvl
+              const showB = (ghostB ?? 0) > lvl
               return (
+                // Full-width row centered — side-by-side when both branches present
                 <div
-                  key={i}
-                  className="absolute left-1/2 -translate-x-1/2"
-                  style={posStyle}
+                  key={lvl}
+                  className="absolute left-0 right-0 flex justify-center gap-1"
+                  style={{ ...posStyle, zIndex: certainShown + lvl }}
                 >
-                  {/* Branch A ghost (cyan tint) */}
-                  {ghostA !== undefined && ghostA > i && (
+                  {showA && (
                     <div
                       className={[
-                        'w-8 h-8 rounded-full border-2 flex items-center justify-center absolute -translate-x-1/2',
-                        isWhiteGhost
-                          ? 'bg-amber-50 border-cyan-400'
-                          : 'bg-stone-900 border-cyan-400',
+                        'w-8 h-8 rounded-full border-2 flex-shrink-0',
+                        isWhiteGhost ? 'bg-amber-100 border-cyan-400' : 'bg-stone-800 border-cyan-400',
                       ].join(' ')}
-                      style={{
-                        opacity: 0.45,
-                        boxShadow: '0 0 8px 2px rgba(34,211,238,0.6)',
-                        left: ghostB !== undefined && ghostB > i ? '-6px' : '0px',
-                      }}
+                      style={{ opacity: 0.5, boxShadow: '0 0 10px 3px rgba(34,211,238,0.65)' }}
                     />
                   )}
-                  {/* Branch B ghost (orange tint) */}
-                  {ghostB !== undefined && ghostB > i && (
+                  {showB && (
                     <div
                       className={[
-                        'w-8 h-8 rounded-full border-2 flex items-center justify-center absolute -translate-x-1/2',
-                        isWhiteGhost
-                          ? 'bg-amber-50 border-orange-400'
-                          : 'bg-stone-900 border-orange-400',
+                        'w-8 h-8 rounded-full border-2 flex-shrink-0',
+                        isWhiteGhost ? 'bg-amber-100 border-orange-400' : 'bg-stone-800 border-orange-400',
                       ].join(' ')}
-                      style={{
-                        opacity: 0.45,
-                        boxShadow: '0 0 8px 2px rgba(251,146,60,0.6)',
-                        left: ghostA !== undefined && ghostA > i ? '6px' : '0px',
-                      }}
+                      style={{ opacity: 0.5, boxShadow: '0 0 10px 3px rgba(251,146,60,0.65)' }}
                     />
                   )}
                 </div>

@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import type { GameState, Player, QuantumBranchPositions } from '../store/gameStore'
+import type { GameState, Player, PointState, QuantumBranchPositions } from '../store/gameStore'
 import Triangle from './Triangle'
 import Checker from './Checker'
 
@@ -121,15 +121,21 @@ export default function Board({ gameState, selectedPoint, onSelectPoint, onMoveT
   const canBearOffWhite = validDests.has('off') && current_player === 'white'
   const canBearOffBlack = validDests.has('off') && current_player === 'black'
 
-  function getGhostCounts(i: number) {
-    if (!ghostBranches) return { ghostA: undefined, ghostB: undefined }
+  // Returns display state and ghost counts for a single point during quantum superposition.
+  // Certain pieces (same count in both branches) are shown solid via displayPt.
+  // Ghost counts are ONLY the uncertain extras — different between branches.
+  function getQuantumPointData(i: number): { displayPt: PointState; ghostA: number; ghostB: number } {
+    if (!ghostBranches) return { displayPt: board[i], ghostA: 0, ghostB: 0 }
     const qp = ghostBranches.quantumPlayer
-    const ptA = ghostBranches.branchA.board[i]
-    const ptB = ghostBranches.branchB.board[i]
-    return {
-      ghostA: ptA.player === qp && ptA.count > 0 ? ptA.count : undefined,
-      ghostB: ptB.player === qp && ptB.count > 0 ? ptB.count : undefined,
-    }
+    const countA = ghostBranches.branchA.board[i].player === qp ? ghostBranches.branchA.board[i].count : 0
+    const countB = ghostBranches.branchB.board[i].player === qp ? ghostBranches.branchB.board[i].count : 0
+    const certain = Math.min(countA, countB)
+    const basePt = board[i]
+    // Hide quantum player's pre-move pieces; replace with certain count
+    const displayPt: PointState = basePt.player === qp
+      ? (certain > 0 ? { count: certain, player: qp } : { count: 0, player: null })
+      : basePt
+    return { displayPt, ghostA: countA - certain, ghostB: countB - certain }
   }
 
   function renderRow(indices: number[], orientation: 'up' | 'down') {
@@ -139,12 +145,12 @@ export default function Board({ gameState, selectedPoint, onSelectPoint, onMoveT
     return (
       <div className="flex flex-1 h-full">
         {left.map(i => {
-          const { ghostA, ghostB } = getGhostCounts(i)
+          const { displayPt, ghostA, ghostB } = getQuantumPointData(i)
           return (
             <Triangle
               key={i}
               index={i}
-              pointState={board[i]}
+              pointState={displayPt}
               orientation={orientation}
               isHighlighted={validDests.has(i)}
               isSelected={selectedPoint === i}
@@ -152,8 +158,8 @@ export default function Board({ gameState, selectedPoint, onSelectPoint, onMoveT
               onMove={() => onMoveToPoint(i)}
               selectedPoint={selectedPoint}
               currentPlayer={current_player}
-              ghostA={ghostA}
-              ghostB={ghostB}
+              ghostA={ghostA > 0 ? ghostA : undefined}
+              ghostB={ghostB > 0 ? ghostB : undefined}
               ghostPlayer={ghostBranches?.quantumPlayer}
             />
           )
@@ -161,12 +167,12 @@ export default function Board({ gameState, selectedPoint, onSelectPoint, onMoveT
         {/* Bar placeholder */}
         <div className="w-12" />
         {right.map(i => {
-          const { ghostA, ghostB } = getGhostCounts(i)
+          const { displayPt, ghostA, ghostB } = getQuantumPointData(i)
           return (
             <Triangle
               key={i}
               index={i}
-              pointState={board[i]}
+              pointState={displayPt}
               orientation={orientation}
               isHighlighted={validDests.has(i)}
               isSelected={selectedPoint === i}
@@ -174,8 +180,8 @@ export default function Board({ gameState, selectedPoint, onSelectPoint, onMoveT
               onMove={() => onMoveToPoint(i)}
               selectedPoint={selectedPoint}
               currentPlayer={current_player}
-              ghostA={ghostA}
-              ghostB={ghostB}
+              ghostA={ghostA > 0 ? ghostA : undefined}
+              ghostB={ghostB > 0 ? ghostB : undefined}
               ghostPlayer={ghostBranches?.quantumPlayer}
             />
           )
