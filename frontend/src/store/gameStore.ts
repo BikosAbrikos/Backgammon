@@ -68,6 +68,10 @@ export interface QuantumCtx {
   preQuantumState: GameState
   branchA: QuantumBranchPositions | null
   branchB: QuantumBranchPositions | null
+  /** Actual moves the player made (Branch A) */
+  branchAMoves: MoveOption[]
+  /** Random moves the system generated (Branch B) */
+  branchBMoves: MoveOption[]
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -124,14 +128,16 @@ function extractBranchPositions(state: GameState): QuantumBranchPositions {
 
 // Generates a random-but-valid complete move sequence from the given state.
 // Used to auto-create Branch B after the player finishes Branch A.
-function generateRandomBranch(startState: GameState): QuantumBranchPositions {
+function generateRandomBranch(startState: GameState): { positions: QuantumBranchPositions; moves: MoveOption[] } {
   let s: GameState = JSON.parse(JSON.stringify(startState))
+  const moves: MoveOption[] = []
   let safety = 0
   while (s.phase === 'moving' && s.valid_moves.length > 0 && safety++ < 20) {
     const move = s.valid_moves[Math.floor(Math.random() * s.valid_moves.length)]
+    moves.push(move)
     s = applyMove(s, move.from_pos, move.to_pos)
   }
-  return extractBranchPositions(s)
+  return { positions: extractBranchPositions(s), moves }
 }
 
 // ── Store ──────────────────────────────────────────────────────────────────────
@@ -151,6 +157,7 @@ interface GameStore {
   eloChange: { white: number; black: number } | null
 
   quantumCtx: QuantumCtx | null
+  collapsedBranch: 'A' | 'B' | null
 
   // Starters
   startLocalGame: (mode: GameMode) => Promise<void>
@@ -167,6 +174,7 @@ interface GameStore {
 
   // Quantum
   enterQuantumMode: () => void
+  clearCollapsedBranch: () => void
 
   // Bot automation
   setBotThinking: (v: boolean) => void
@@ -190,6 +198,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   chatMessages: [],
   eloChange: null,
   quantumCtx: null,
+  collapsedBranch: null,
 
   startLocalGame: async (mode) => {
     const backendMode = mode === 'quantum' ? 'short' : mode
@@ -253,9 +262,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
       currentState.current_player === quantumCtx.quantumPlayer &&
       quantumCtx.branchA && quantumCtx.branchB
     ) {
-      const chosen = Math.random() < 0.5 ? quantumCtx.branchA : quantumCtx.branchB
+      const useA = Math.random() < 0.5
+      const chosen = useA ? quantumCtx.branchA : quantumCtx.branchB
       currentState = collapseQuantumState(currentState, chosen, quantumCtx.quantumPlayer)
-      set({ quantumCtx: null })
+      set({ quantumCtx: null, collapsedBranch: useA ? 'A' : 'B' })
     }
 
     const dice = localRollDice()
@@ -272,6 +282,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
         preQuantumState: next,
         branchA: null,
         branchB: null,
+        branchAMoves: [],
+        branchBMoves: [],
       }
     }
 
@@ -322,17 +334,28 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const next = applyMove(gameState, selectedPoint, to)
 
     // ── Quantum branch handling ────────────────────────────────────────────────
-    if (quantumCtx?.phase === 'building' && next.phase === 'waiting_roll') {
-      // Branch A (player's moves) complete — auto-generate Branch B randomly,
-      // then immediately hand off to the opponent
-      const branchA = extractBranchPositions(next)
-      const branchB = generateRandomBranch(quantumCtx.preQuantumState)
-      const opponentTurn = advanceTurn(quantumCtx.preQuantumState)
-      set({
-        gameState: opponentTurn,
-        selectedPoint: null,
-        quantumCtx: { ...quantumCtx, phase: 'opponent', branchA, branchB },
-      })
+    if (quantumCtx?.phase === 'building') {
+      // Record the move that was just made
+      const moveRecord = gameState.valid_moves.find(
+        m => String(m.from_pos) === String(selectedPoint) && String(m.to_pos) === String(to)
+      ) ?? { from_pos: selectedPoint, to_pos: to, die_value: 0 }
+      const updatedAMoves = [...quantumCtx.branchAMoves, moveRecord]
+
+      if (next.phase === 'waiting_roll') {
+        // Branch A complete — auto-generate Branch B, hand off to opponent
+        const branchA = extractBranchPositions(next)
+        const { positions: branchB, moves: branchBMoves } = generateRandomBranch(quantumCtx.preQuantumState)
+        const opponentTurn = advanceTurn(quantumCtx.preQuantumState)
+        set({
+          gameState: opponentTurn,
+          selectedPoint: null,
+          quantumCtx: { ...quantumCtx, phase: 'opponent', branchA, branchB, branchAMoves: updatedAMoves, branchBMoves },
+        })
+        return
+      }
+
+      // Still mid-turn in Branch A
+      set({ gameState: next, selectedPoint: null, quantumCtx: { ...quantumCtx, branchAMoves: updatedAMoves } })
       return
     }
 
@@ -356,10 +379,13 @@ export const useGameStore = create<GameStore>((set, get) => ({
         preQuantumState: gameState,
         branchA: null,
         branchB: null,
+        branchAMoves: [],
+        branchBMoves: [],
       },
     })
   },
 
+  clearCollapsedBranch: () => set({ collapsedBranch: null }),
   clearSelection: () => set({ selectedPoint: null }),
   setBotThinking: (v) => set({ isBotThinking: v }),
   applyBotState: (state) => set({ gameState: state }),
@@ -368,6 +394,6 @@ export const useGameStore = create<GameStore>((set, get) => ({
   reset: () => set({
     gameState: null, selectedPoint: null, isRolling: false,
     botLevel: null, botColor: null, isBotThinking: false,
-    onlineCtx: null, chatMessages: [], eloChange: null, quantumCtx: null,
+    onlineCtx: null, chatMessages: [], eloChange: null, quantumCtx: null, collapsedBranch: null,
   }),
 }))

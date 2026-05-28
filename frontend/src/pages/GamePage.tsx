@@ -162,18 +162,106 @@ function WinnerOverlay({ winner, eloChange, myColor, onRestart }: {
 
 // ── Quantum collapse animation ─────────────────────────────────────────────────
 
-function CollapseOverlay({ onDone }: { onDone: () => void }) {
+function CollapseOverlay({ branch, onDone }: { branch: 'A' | 'B' | null; onDone: () => void }) {
   useEffect(() => {
-    const t = setTimeout(onDone, 1500)
+    const t = setTimeout(onDone, 2200)
     return () => clearTimeout(t)
   }, [onDone])
 
+  const isA = branch === 'A'
   return (
-    <div className="fixed inset-0 flex items-center justify-center z-40 bg-black/60 pointer-events-none">
-      <div className="text-center">
+    <div className="fixed inset-0 flex items-center justify-center z-40 bg-black/70 pointer-events-none">
+      <div className="text-center px-8 py-6 rounded-2xl border border-stone-700/50"
+        style={{ background: 'linear-gradient(135deg,#0a0a0a,#1a1a1a)' }}>
         <div className="text-6xl mb-3 animate-pulse">⚛️</div>
-        <div className="text-2xl font-bold text-cyan-300">Quantum Collapse!</div>
-        <div className="text-stone-400 text-sm mt-1">One branch becomes reality…</div>
+        <div className="text-2xl font-bold text-white mb-3">Quantum Collapse!</div>
+        {branch && (
+          <>
+            <div className={['text-lg font-bold', isA ? 'text-cyan-400' : 'text-orange-400'].join(' ')}>
+              ✅ Branch {branch} survived!
+            </div>
+            <div className="text-stone-500 text-sm mt-1">
+              ❌ Branch {isA ? 'B' : 'A'} was cancelled
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ── Quantum moves panel ───────────────────────────────────────────────────────
+
+function formatMove(m: { from_pos: number | 'bar'; to_pos: number | 'off'; die_value: number }): string {
+  const from = m.from_pos === 'bar' ? 'Bar' : `Pt ${m.from_pos}`
+  const to = m.to_pos === 'off' ? 'Off' : `Pt ${m.to_pos}`
+  return `${from} → ${to}`
+}
+
+function QuantumMovesPanel({ ctx }: { ctx: import('../store/gameStore').QuantumCtx }) {
+  return (
+    <div className="flex flex-col gap-4 w-52 bg-stone-950/80 border border-stone-800/60 rounded-xl p-4 text-xs shrink-0">
+
+      {/* Header */}
+      <div className="text-center">
+        <div className="text-base font-bold text-stone-200">⚛️ Superposition</div>
+        <div className="text-stone-500 text-[10px] mt-0.5">Opponent sees both branches</div>
+      </div>
+
+      {/* Branch A — player's moves */}
+      <div className="flex flex-col gap-1.5">
+        <div className="flex items-center gap-1.5 font-semibold text-cyan-400">
+          <div className="w-3 h-3 rounded-full bg-cyan-400/70 border border-cyan-300 shrink-0" />
+          Branch A — Your moves
+        </div>
+        {ctx.branchAMoves.length === 0
+          ? <div className="text-stone-600 pl-4">Playing…</div>
+          : ctx.branchAMoves.map((m, i) => (
+            <div key={i} className="pl-4 text-stone-300 font-mono">
+              {i + 1}. {formatMove(m)} <span className="text-stone-600">🎲{m.die_value}</span>
+            </div>
+          ))
+        }
+      </div>
+
+      <div className="border-t border-stone-800" />
+
+      {/* Branch B — system's random moves */}
+      <div className="flex flex-col gap-1.5">
+        <div className="flex items-center gap-1.5 font-semibold text-orange-400">
+          <div className="w-3 h-3 rounded-full bg-orange-400/70 border border-orange-300 shrink-0" />
+          Branch B — System
+        </div>
+        {ctx.branchBMoves.length === 0
+          ? <div className="text-stone-600 pl-4">Generating…</div>
+          : ctx.branchBMoves.map((m, i) => (
+            <div key={i} className="pl-4 text-stone-300 font-mono">
+              {i + 1}. {formatMove(m)} <span className="text-stone-600">🎲{m.die_value}</span>
+            </div>
+          ))
+        }
+      </div>
+
+      <div className="border-t border-stone-800" />
+
+      {/* Legend */}
+      <div className="flex flex-col gap-1.5 text-[10px] text-stone-500">
+        <div className="font-semibold text-stone-400 text-xs">What you see on the board:</div>
+        <div className="flex items-center gap-1.5">
+          <div className="w-4 h-4 rounded-full bg-amber-100 border-2 border-cyan-400 shrink-0 opacity-50" />
+          <span><span className="text-cyan-400 font-semibold">Cyan</span> ghost = Branch A position</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <div className="w-4 h-4 rounded-full bg-amber-100 border-2 border-orange-400 shrink-0 opacity-50" />
+          <span><span className="text-orange-400 font-semibold">Orange</span> ghost = Branch B position</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <div className="w-4 h-4 rounded-full bg-amber-50 border-2 border-amber-300 shrink-0" />
+          <span><span className="text-stone-300 font-semibold">Solid</span> = same in both, guaranteed</span>
+        </div>
+        <div className="mt-1 text-stone-600 leading-relaxed">
+          After your opponent moves, one branch collapses at random — 50 / 50.
+        </div>
       </div>
     </div>
   )
@@ -252,10 +340,10 @@ export default function GamePage() {
   const { token, user } = useAuthStore()
   const {
     gameState, gameType, selectedPoint, isRolling, isBotThinking,
-    botLevel, botColor, onlineCtx, chatMessages, eloChange, quantumCtx,
+    botLevel, botColor, onlineCtx, chatMessages, eloChange, quantumCtx, collapsedBranch,
     rollDice, selectPoint, moveTo, clearSelection,
     setBotThinking, applyBotState, setOnlineGame, receiveOnlineState,
-    setEloChange, addChat, reset,
+    setEloChange, addChat, reset, clearCollapsedBranch,
   } = useGameStore()
 
   const wsRef = useRef<WebSocket | null>(null)
@@ -522,10 +610,17 @@ export default function GamePage() {
           />
         </div>
 
-        {/* Chat (online only) */}
-        {isOnline && (
-          <ChatPanel messages={chatMessages} onSend={sendChat} />
-        )}
+        {/* Right-side panels */}
+        <div className="flex flex-col gap-4">
+          {/* Chat (online only) */}
+          {isOnline && (
+            <ChatPanel messages={chatMessages} onSend={sendChat} />
+          )}
+          {/* Quantum moves panel (shown during opponent's turn in superposition) */}
+          {quantumCtx?.phase === 'opponent' && (
+            <QuantumMovesPanel ctx={quantumCtx} />
+          )}
+        </div>
       </div>
 
       {gameState.phase === 'game_over' && gameState.winner && (
@@ -538,7 +633,10 @@ export default function GamePage() {
       )}
 
       {showCollapse && (
-        <CollapseOverlay onDone={() => setShowCollapse(false)} />
+        <CollapseOverlay
+          branch={collapsedBranch}
+          onDone={() => { setShowCollapse(false); clearCollapsedBranch() }}
+        />
       )}
     </div>
   )
